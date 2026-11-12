@@ -1,0 +1,21 @@
+# Render static-site configuration for Unsigned (v4.0)
+# Deploy: Render dashboard > New > Blueprint > pick this repo.
+# Render reads this file and needs no further settings.
+
+services:
+  - type: web
+    name: unsigned
+    runtime: static
+    buildCommand: echo "static site, no build needed"
+    staticPublishPath: .
+    envVars:
+      - key: RENDER_SKIP
+        value: none
+    headers:
+      - path: /*
+        name: Cache-Control
+        value: public, max-age=0, must-revalidate
+    routes:
+      - type: rewrite
+        source: /*
+        destination: /index.html
