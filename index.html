@@ -5359,11 +5359,13 @@ async function onlineEnter(roomId) {
   ON.roomId = roomId;
   await onlineRefreshRoster();
   const ch = ON.sb.channel('room:' + roomId, { config: { presence: { key: ON.uid } } });
-  ch.on('postgres_changes', { event: '*', schema: 'public', table: 'players', filter: 'room_id=eq.' + roomId }, () => { onlineRefreshRoster().catch(() => { }); })
-    .on('postgres_changes', { event: 'UPDATE', schema: 'public', table: 'rooms', filter: 'id=eq.' + roomId }, p => { ON.room = p.new; onlineRefreshRoster(); })
-    .on('presence', { event: 'sync' }, () => { ON.presence = ch.presenceState() || {}; onlineRefreshRoster(); })
+  ch.on('postgres_changes', { event: '*', schema: 'public', table: 'players', filter: 'room_id=eq.' + roomId }, () => { onlineRosterRedraw().catch(() => { }); })
+    .on('postgres_changes', { event: 'UPDATE', schema: 'public', table: 'rooms', filter: 'id=eq.' + roomId }, p => { ON.room = p.new; onlineRosterRedraw().catch(() => { }); })
+    .on('presence', { event: 'sync' }, () => { ON.presence = ch.presenceState() || {}; onlineRosterRedraw().catch(() => { }); })
     .subscribe();
   ON.channel = ch;
+  if (ON.rosterT) clearInterval(ON.rosterT);
+  ON.rosterT = setInterval(() => { onlineRosterRedraw().catch(() => { }); }, 6000);
   const meRow = (ON.players || []).find(p => p.user_id === ON.uid);
   ch.track({ name: meRow ? meRow.name : 'phone' });
   onlineRoute();
@@ -5372,6 +5374,31 @@ async function onlineEnter(roomId) {
 async function onlineRefreshRoster() {
   const sel = await ON.sb.from('players').select('*').eq('room_id', ON.roomId).order('joined_at');
   if (!sel.error) ON.players = sel.data;
+}
+
+function onlineRosterInner(players, online, isHost) {
+  const at = u => online.includes(u);
+  return players.length ? players.map(p => `<div class="task"><span style="display:flex;align-items:center;gap:.6rem">${at(p.user_id) ? '<span style="width:.5rem;height:.5rem;border-radius:50%;background:var(--gl);display:inline-block" title="at the table"></span>' : '<span style="width:.5rem;height:.5rem;border-radius:50%;background:var(--mu);opacity:.4;display:inline-block" title="not at the table"></span>'}${av(p.name)}</span><span>${esc(p.name)}${p.user_id === ON.uid ? ' <span class="mu small">(you)</span>' : ''}</span><span class="mu small">${at(p.user_id) ? 'at the table' : 'between rounds'}</span></div>`).join('')
+    : '<p class="mu">Only you so far.</p>';
+}
+
+/* Live roster: realtime handlers refresh the data AND redraw the lobby
+ * in place (the earlier handlers updated data only, so screens sat at
+ * stale counts). A slow poll heals missed events on mobile browsers,
+ * which suspend websockets when the tab is backgrounded. */
+async function onlineRosterRedraw() {
+  if (!ON || !ON.sb) return;
+  await onlineRefreshRoster();
+  const seat = document.getElementById('onSeatLine');
+  const box = document.getElementById('onRoster');
+  if (!seat && !box) return;
+  const room = ON.room || {};
+  const bits = onlineRosterInner(ON.players || [], Object.keys(ON.presence || {}), ON.isHost);
+  if (box) box.innerHTML = bits;
+  if (seat) {
+    const n = (ON.players || []).length;
+    seat.textContent = `${n} seated \u00b7 ${ON.isHost ? 'you host' : 'you play'} \u00b7 needs ${Math.max(3, n)} friends and doors closed for lies`;
+  }
 }
 
 /* ---------- the lobby ---------- */
@@ -5384,16 +5411,15 @@ function onlineLobbyScreen() {
   const cfg = s.count ? onlineCfgInfo(s) : `<p class="mu">The host is choosing the roles, the map and the house rules.</p>`;
   const online = Object.keys(ON.presence || {});
   const at = u => online.includes(u);
-  const roster = players.length ? players.map(p => `<div class="task"><span style="display:flex;align-items:center;gap:.6rem">${at(p.user_id) ? '<span style="width:.5rem;height:.5rem;border-radius:50%;background:var(--gl);display:inline-block" title="at the table"></span>' : '<span style="width:.5rem;height:.5rem;border-radius:50%;background:var(--mu);opacity:.4;display:inline-block" title="not at the table"></span>'}${av(p.name)}</span><span>${esc(p.name)}${p.user_id === ON.uid ? ' <span class="mu small">(you)</span>' : ''}</span><span class="mu small">${at(p.user_id) ? 'at the table' : 'between rounds'}</span></div>`).join('')
-    : '<p class="mu">Only you so far.</p>';
+  const roster = onlineRosterInner(players, online, isHost);
   show(`<h1>The refuge</h1>
     <p class="mu small">Table under the code — everyone enters it on their own phone.</p>
     <div class="card" style="text-align:center">
       <p class="bd" style="margin:0">room code</p>
       <h1 style="margin:.1rem 0 .3rem;letter-spacing:.35rem">${esc(room.code || '')}</h1>
-      <p class="mu small">${players.length} seated · ${isHost ? 'you host' : 'you play'} · needs ${Math.max(3, players.length)} friends and doors closed for lies</p>
+      <p class="mu small" id="onSeatLine">${players.length} seated · ${isHost ? 'you host' : 'you play'} · needs ${Math.max(3, players.length)} friends and doors closed for lies</p>
     </div>
-    <div class="card"><h2>At the table</h2>${roster}</div>
+    <div class="card"><h2>At the table</h2><div id="onRoster">${roster}</div></div>
     <div class="card"><h2>The table is set with</h2>${cfg}</div>
     <p class="hint mu">${isHost ? 'Set the table, then ring for the Grey Host. Nobody sees a role until it is dealt.' : 'Wait for the host. Your phone keeps its own secrets.'}</p>
     ${isHost ? `<button style="width:100%" onclick="onlineConfig()"><b>Set the table</b><small>Roles, map and house rules — before the deal.</small></button>` : ''}
@@ -5543,6 +5569,7 @@ async function onlineLeave() {
   try { ON.channel && await ON.sb.removeChannel(ON.channel); } catch (e) { }
   try { ON.sanCh && await ON.sb.removeChannel(ON.sanCh); } catch (e) { }
   if (ON.candleT) { clearInterval(ON.candleT); ON.candleT = null; }
+  if (ON.rosterT) { clearInterval(ON.rosterT); ON.rosterT = null; }
   try { await ON.sb.rpc('leave_room'); } catch (e) { }
   ON = null;
   window.ONCFG = false;
