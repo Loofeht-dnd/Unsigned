@@ -5400,6 +5400,15 @@ async function onlineEnter(roomId) {
 async function onlineRefreshRoster() {
   const sel = await ON.sb.from('players').select('*').eq('room_id', ON.roomId).order('joined_at').order('id');
   if (!sel.error) ON.players = sel.data;
+  /* heal a missed realtime bell: re-read the room row too, and route if the phase moved on */
+  try {
+    const rm = await ON.sb.from('rooms').select('*').eq('id', ON.roomId).single();
+    if (!rm.error && rm.data) {
+      const was = (ON.room || {}).phase || 'lobby';
+      ON.room = rm.data;
+      if ((rm.data.phase || 'lobby') !== was) onlineRoute();
+    }
+  } catch (e) { }
 }
 
 function onlineRosterInner(players, online, isHost) {
@@ -5457,7 +5466,11 @@ async function onlineRingHost() {
   if (!ON || !ON.isHost) return;
   const msg = toast('The Grey Host is shuffling…');
   const r = await onlineHost({ action: 'deal', room: ON.roomId });
-  if (r && r.error) { toast(String(r.error.message || 'The deal was refused.')); return; }
+  if (r && r.error) {
+    /* the cards are already out: this screen is just behind. Re-sync and walk in. */
+    if (/already out/i.test(String(r.error.message || ''))) { await onlineRefreshRoster(); return; }
+    toast(String(r.error.message || 'The deal was refused.')); return;
+  }
   sfx('night'); haptic([15, 30, 15]);
   /* don't wait for the realtime bell: walk to the sanctuary at once */
   if (ON.room) ON.room = { ...ON.room, phase: 'night' };
