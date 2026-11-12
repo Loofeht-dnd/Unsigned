@@ -5459,9 +5459,9 @@ function onlineConfig() {
       <button class="st" id="st1" onclick="onGoStep(1)"><b>2</b><span>Players</span></button>
       <button class="st" id="st2" onclick="onGoStep(2)"><b>3</b><span>Roles</span></button>
     </nav>
-    <section class="pane" id="p0"><h2>Choose a place</h2>${mapPane()}</section>
-    <section class="pane" id="p1" style="display:none"></section>
-    <section class="pane" id="p2" style="display:none">
+    <section class="pane on" id="p0"><h2>Choose a place</h2>${mapPane()}</section>
+    <section class="pane" id="p1"></section>
+    <section class="pane" id="p2">
       <div class="summary" id="summary"></div>
       <div class="card">
         <h2>Choose roles</h2>
@@ -5499,7 +5499,7 @@ function onlineConfig() {
 /* the online stepper: dedicated handlers, the offline goStep/nextStep untouched */
 function onGoStep(n) {
   STEP = Math.max(0, Math.min(2, n || 0));
-  [0, 1, 2].forEach(i => { const p = document.getElementById('p' + i); if (p) p.style.display = i === STEP ? '' : 'none'; });
+  [0, 1, 2].forEach(i => { const p = document.getElementById('p' + i); if (p) p.classList.toggle('on', i === STEP); });
   document.querySelectorAll('.st').forEach((b, i) => b.classList.toggle('on', i <= STEP));
   if (STEP === 1) onlineRosPane();
   updateSetup();
