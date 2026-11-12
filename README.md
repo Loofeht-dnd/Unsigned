@@ -30,3 +30,5 @@ as an allowed Site URL / redirect URL.
 In the main workspace: `python rebuild.py`, then copy the new
 `index.v2.html` over `index.html` here and push. Render redeploys
 automatically.
+
+Also deployed on Vercel; pushes to main redeploy automatically.
