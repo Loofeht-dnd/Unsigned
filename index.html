@@ -5334,11 +5334,26 @@ async function onlineEnsureAnon(sb) {
 }
 
 /* ---------- host / join ---------- */
+/* your phone is still seated at an old table that already dealt: ask, then let go */
+function onlineAskLeaveOld() {
+  return new Promise(res => {
+    openDialog(`<h2>Still at an old table</h2><div class="card">
+      <p class="mu small">Your phone is seated in a game whose cards are already out. Leave that table to continue here — the old game carries on without you.</p>
+      <button onclick="onlineOldLeave(true)"><b>Leave it and continue</b></button>
+      <button class="alt" style="margin-top:.5rem" onclick="onlineOldLeave(false)">Never mind</button>
+    </div>`, 'Old table');
+    window.onlineOldLeave = (yes) => { closeDialog(); res(!!yes); };
+  });
+}
 async function onlineHostTable(name) {
   const sb = await onlineClient();
   ON = { sb, isHost: true, presence: {} };
   ON.uid = await onlineEnsureAnon(sb);
-  const r = await sb.rpc('create_room', { p_name: name });
+  let r = await sb.rpc('create_room', { p_name: name });
+  if (r.error && /finish your current game/i.test(r.error.message || '') && await onlineAskLeaveOld()) {
+    await sb.rpc('leave_room');
+    r = await sb.rpc('create_room', { p_name: name });
+  }
   if (r.error) throw r.error;
   await onlineEnter(r.data);
 }
@@ -5346,7 +5361,11 @@ async function onlineJoin(code, name) {
   const sb = await onlineClient();
   ON = { sb, isHost: false, presence: {} };
   ON.uid = await onlineEnsureAnon(sb);
-  const r = await sb.rpc('join_room', { p_code: code, p_name: name });
+  let r = await sb.rpc('join_room', { p_code: code, p_name: name });
+  if (r.error && /finish your current game/i.test(r.error.message || '') && await onlineAskLeaveOld()) {
+    await sb.rpc('leave_room');
+    r = await sb.rpc('join_room', { p_code: code, p_name: name });
+  }
   if (r.error) throw r.error;
   await onlineEnter(r.data);
 }
@@ -5360,7 +5379,14 @@ async function onlineEnter(roomId) {
   await onlineRefreshRoster();
   const ch = ON.sb.channel('room:' + roomId, { config: { presence: { key: ON.uid } } });
   ch.on('postgres_changes', { event: '*', schema: 'public', table: 'players', filter: 'room_id=eq.' + roomId }, () => { onlineRosterRedraw().catch(() => { }); })
-    .on('postgres_changes', { event: 'UPDATE', schema: 'public', table: 'rooms', filter: 'id=eq.' + roomId }, p => { ON.room = p.new; onlineRosterRedraw().catch(() => { }); })
+    .on('postgres_changes', { event: 'UPDATE', schema: 'public', table: 'rooms', filter: 'id=eq.' + roomId }, p => {
+      const was = (ON.room || {}).phase;
+      ON.room = p.new;
+      /* the deal flips the phase: that flip is the bell — route to the sanctuary.
+       * Same-phase updates only refresh the roster. */
+      if ((p.new.phase || 'lobby') !== was) onlineRoute();
+      else onlineRosterRedraw().catch(() => { });
+    })
     .on('presence', { event: 'sync' }, () => { ON.presence = ch.presenceState() || {}; onlineRosterRedraw().catch(() => { }); })
     .subscribe();
   ON.channel = ch;
@@ -5433,6 +5459,9 @@ async function onlineRingHost() {
   const r = await onlineHost({ action: 'deal', room: ON.roomId });
   if (r && r.error) { toast(String(r.error.message || 'The deal was refused.')); return; }
   sfx('night'); haptic([15, 30, 15]);
+  /* don't wait for the realtime bell: walk to the sanctuary at once */
+  if (ON.room) ON.room = { ...ON.room, phase: 'night' };
+  onlineRoute();
 }
 
 /* ---------- M3: the host sets the table (reuses the offline setup pieces) ---------- */
