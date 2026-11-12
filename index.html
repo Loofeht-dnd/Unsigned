@@ -5300,7 +5300,7 @@ async function onlineGo(kind) {
   }
   fail('Relaying to the refuge…');
   try {
-    if (kind === 'host') await onlineHost(name); else await onlineJoin(code, name);
+    if (kind === 'host') await onlineHostTable(name); else await onlineJoin(code, name);
   } catch (e) {
     fail(String((e && (e.message || e.msg)) || 'No connection'));
     const t = String((e && (e.message || e.msg)) || '');
@@ -5334,7 +5334,7 @@ async function onlineEnsureAnon(sb) {
 }
 
 /* ---------- host / join ---------- */
-async function onlineHost(name) {
+async function onlineHostTable(name) {
   const sb = await onlineClient();
   ON = { sb, isHost: true, presence: {} };
   ON.uid = await onlineEnsureAnon(sb);
