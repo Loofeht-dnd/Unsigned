@@ -3559,7 +3559,7 @@ function seatTable(o) {
     const cls = `seat${dead ? ' dead' : ''}${sel ? ' turn' : ''}${out ? ' banished' : ''}${off ? ' off' : ''}`;
     const inner = `${dead ? avd(p.n) : av(p.n)}<small>${esc(p.n)}</small>${sel ? '<i class="seatYou">you</i>' : ''}${dead ? `<img class="seatSk" src="${IMG.skull}" alt="">` : ''}`;
     const style = `--si:${s.k};left:${s.x.toFixed(2)}%;top:${s.y.toFixed(2)}%`;
-    if (o.pick && !dead && s.ix !== o.voter && !off) return `<button class="${cls}" data-i="${s.ix}" style="${style}" onclick="vpick(${s.ix},this)" aria-label="Vote for ${esc(p.n)}">${inner}</button>`;
+    if (o.pick && !dead && s.ix !== o.voter && !off) return `<button class="${cls}" data-i="${s.ix}" style="${style}" onclick="${o.pickFn || 'vpick'}(${s.ix},this)" aria-label="Vote for ${esc(p.n)}">${inner}</button>`;
     return `<span class="${cls}" data-i="${s.ix}" style="${style}"${dead ? ' aria-label="' + esc(p.n) + ', dead"' : ''}>${inner}</span>`;
   }).join('');
   const center = o.center || `<span class="bd">${esc(o.kicker || 'The table')}</span><b>${esc(o.title || '')}</b><small>${esc(o.sub || '')}</small>`;
@@ -4293,7 +4293,7 @@ function deletePreset(i) {
 function rulesInnerHTML() {
   const r = DRAFT.rules || {};
   const t = (k, title, sub) => `<button class="toggle" id="rule_${k}" role="switch" aria-checked="${!!r[k]}" onclick="toggleRule('${k}')"><span><b>${title}</b><small>${sub}</small></span><span class="knob"></span></button>`;
-  return `<p class="bd">House rules</p>${t('openVotes', 'Show who voted how', 'After the reveal, the table draws an arrow from every voter to their choice.')}${t('revealDead', 'Reveal roles at death', 'The newspaper and the fallen list name the role of each dead player.')}${t('nightOneSafe', 'No deaths on night one', 'Nobody can die in the first night. A gentler opening.')}${t('noEvents', 'Quiet nights', 'No special events. Every night is an ordinary night.')}${t('hardTasks', 'The long winter', 'The village needs twice as many tasks to win.')}${t('noSab', 'No sabotage', 'The wolves hunt only. The Saboteur works with tasks or rest instead.')}<p class="mu small">These rules apply to the next game.</p>`;
+  return `<p class="bd">House rules</p>${t('openVotes', 'Show who voted how', 'After the reveal, the table draws an arrow from every voter to their choice.')}${t('revealDead', 'Reveal roles at death', 'The newspaper and the fallen list name the role of each dead player.')}${t('nightOneSafe', 'No deaths on night one', 'Nobody can die in the first night. A gentler opening.')}${t('noEvents', 'Quiet nights', 'No special events. Every night is an ordinary night.')}${t('hardTasks', 'The long winter', 'The village needs twice as many tasks to win.')}${t('noSab', 'No sabotage', 'The wolves hunt only. The Saboteur works with tasks or rest instead.')}${window.ONCFG ? t('whoWhere', 'Show where everyone was', 'At dawn, the report lists who spent the night in which room. Off: only the head-counts.') : ''}<p class="mu small">These rules apply to the next game.</p>`;
 }
 function toggleRule(k) {
   DRAFT.rules = DRAFT.rules || {};
@@ -4305,6 +4305,7 @@ function toggleRule(k) {
   if (k === 'noEvents') toast(DRAFT.rules[k] ? 'Every night will be an ordinary night. No omens.' : 'Special nights may return.');
   if (k === 'hardTasks') toast(DRAFT.rules[k] ? 'The long winter: the village needs twice as many tasks.' : 'The task goal returns to half the board.');
   if (k === 'noSab') toast(DRAFT.rules[k] ? 'The wolves will hunt only. No task will be undone.' : 'Sabotage returns. The Saboteur works again.');
+  if (k === 'whoWhere') toast(DRAFT.rules[k] ? 'The dawn report will show who was in each room.' : 'The dawn report will show only how many were in each room.');
 }
 
 /* ---------- host tools ---------- */
@@ -4424,15 +4425,19 @@ const WEATHER = [
   { sky: 'A red horizon', wind: 'dogs uneasy', k: 'red' },
   { sky: 'Still and grey', wind: 'smoke hanging low', k: 'smoke' }
 ];
+/* the online table's state, or null: reading a not-yet-initialised let throws, so look it up safely */
+function onlCtx() { try { return ON || null; } catch (e) { return null; } }
 function weatherOf() {
-  const i = ((((S && S.day) || 0) * 3 + 1) % WEATHER.length);
+  const dayN = (S && S.day) || (((onlCtx() || {}).dawn || {}).day) || 0;
+  const i = (((dayN * 3 + 1) % WEATHER.length));
   return WEATHER[i];
 }
 function weatherKind() {
-  if (!S) return 'clear';
+  const O = onlCtx(), onl = !S && O && O.room;
+  if (!S && !onl) return 'clear';
   if (PHASE === 'day') return weatherOf().k || 'clear';
   if (PHASE === 'night' || PHASE === 'deal' || PHASE === 'vote') {
-    const e = (N && N.event && N.event.k) || '';
+    const e = onl ? ((O.nightEv && O.nightEv.event && O.nightEv.event.k) || '') : ((N && N.event && N.event.k) || '');
     if (e === 'bloodmoon') return 'red';
     if (e === 'blackout') return 'blackout';
     if (e === 'fog') return 'fog';
@@ -4480,10 +4485,11 @@ function rfNext() {
 
 /* ---------- atmosphere (v2.4 layered) ---------- */
 function ambientKey() {
-  if (!S || !PHASE) return 'none';
+  const O = onlCtx(), onlKey = (!S && O && O.room && O.room.settings) ? O.room.settings.key : null;
+  if ((!S && !onlKey) || !PHASE) return 'none';
   const base = (PHASE === 'night' || PHASE === 'deal') ? 'night' : PHASE === 'day' ? 'day' : PHASE === 'vote' ? 'vote' : 'none';
   if (base === 'none') return 'none';
-  return base + ':' + ((S.pl && S.pl.key) || 'barrio');
+  return base + ':' + ((S && S.pl && S.pl.key) || onlKey || 'barrio');
 }
 function startAmbient() {
   if (!PREFS.sound) return;
@@ -5481,7 +5487,7 @@ async function onlineRingHost() {
 }
 
 /* ---------- M3: the host sets the table (reuses the offline setup pieces) ---------- */
-const ONRULES = { openVotes: 'who voted how', revealDead: 'roles at death', nightOneSafe: 'safe night one', noEvents: 'quiet nights', hardTasks: 'long winter', noSab: 'no sabotage' };
+const ONRULES = { openVotes: 'who voted how', revealDead: 'roles at death', nightOneSafe: 'safe night one', noEvents: 'quiet nights', hardTasks: 'long winter', noSab: 'no sabotage', whoWhere: 'who was where' };
 function onlineCfgInfo(s) {
   const n = Object.values(s.count || {}).reduce((a, b) => a + b, 0);
   const pl = PLACES[s.key];
@@ -5496,7 +5502,7 @@ function onlineConfig() {
   window.ONCFG = true;
   NAMES = (ON.players || []).map(p => p.name);
   COUNT = {};
-  DRAFT.rules = { revealDead: false, nightOneSafe: false, openVotes: true, noEvents: false, hardTasks: false, noSab: false, ...(DRAFT.rules || {}) };
+  DRAFT.rules = { revealDead: false, nightOneSafe: false, openVotes: true, noEvents: false, hardTasks: false, noSab: false, whoWhere: true, ...(DRAFT.rules || {}) };
   STEP = 0;
   show(`<div class="lobbyHead"><img class="lg sm" src="${IMG.logo}" alt="Unsigned"><div class="lobbyTools"><button class="iconbtn" onclick="onlineRoute()" aria-label="Back to the lobby"><img src="${IMG.ic_set}" alt=""></button><button class="iconbtn" onclick="howTo()" aria-label="How to play">?</button></div></div>
     <nav class="stepper" aria-label="Setup steps">
@@ -5616,6 +5622,8 @@ async function onlineLeave() {
   if (ON.candleT) { clearInterval(ON.candleT); ON.candleT = null; }
   if (ON.locT) { clearInterval(ON.locT); ON.locT = null; }
   if (ON.dtT) { clearInterval(ON.dtT); ON.dtT = 0; }
+  if (ON.autoDawnT) { clearTimeout(ON.autoDawnT); ON.autoDawnT = 0; }
+  try { stopAmbient(); } catch (e) { }
   if (ON.rosterT) { clearInterval(ON.rosterT); ON.rosterT = null; }
   try { await ON.sb.rpc('leave_room'); } catch (e) { }
   ON = null;
@@ -5631,6 +5639,8 @@ async function onlineLeave() {
  * rooms.phase; every phone follows through its rooms UPDATE subscription. */
 function onlineRoute() {
   window.ONCFG = false;
+  /* the vote's reveal is on screen: the next scene waits its turn */
+  if (ON && ON.hold) { ON.heldRoute = true; onlineRefreshAfterLabel(); return; }
   if (!ON || !ON.room) { onlineLobbyScreen(); return; }
   const ph = ON.room.phase || 'lobby';
   if (ph === 'lobby') { onlineLobbyScreen(); return; }
@@ -5661,7 +5671,7 @@ async function onlineSanctuary() {
       if ((p.new.phase || 'lobby') !== (was || 'lobby')) onlineRoute(); else onlineSanSoft();
     })
     .on('postgres_changes', { event: 'INSERT', schema: 'public', table: 'last_words', filter: 'room_id=eq.' + ON.roomId }, p => onlineLastWord(p.new))
-    .on('postgres_changes', { event: '*', schema: 'public', table: 'players', filter: 'room_id=eq.' + ON.roomId }, () => { onlineRefreshRoster().then(() => onlineSanSoft()).catch(() => { }); })
+    .on('postgres_changes', { event: '*', schema: 'public', table: 'players', filter: 'room_id=eq.' + ON.roomId }, () => { onlineRefreshRoster().then(() => { onlineSanSoft(); onlineVoteRefreshSeal(); }).catch(() => { }); })
     .on('postgres_changes', { event: 'INSERT', schema: 'public', table: 'deliveries', filter: 'room_id=eq.' + ON.roomId }, p => onlineMail(p.new))
     .subscribe();
   ON.sanCh = sch;
@@ -5669,7 +5679,7 @@ async function onlineSanctuary() {
   /* safety net if realtime hiccups: a quiet refresh every 8s (it only patches, never rebuilds) */
   if (!ON.locT) ON.locT = setInterval(() => { if (onlineOnSan()) onlineLocTick(); }, 8000);
   /* dying words first if the Grey Host has cut us down */
-  if (dead) { onlineDyingWords(); return; }
+  if (dead && !ON.watching) { onlineDyingWords(); return; }
   /* our own role card first: nobody roams before they know who they are */
   if (!ON.dealt) { onlineDeal(); return; }
   if (!ON.role) {
@@ -5679,6 +5689,8 @@ async function onlineSanctuary() {
   }
   /* unseen mail, so a rejoin keeps its secrets */
   if (!ON.mail) await onlineFetchMail();
+  /* the dawn's candle reveal is a screen to tap through: a late route must not paint over it */
+  if ((ON.inReveal && ON.room.phase === 'day') || ON.hold) return;
   onlineDrawSanctuary();
 }
 
@@ -5708,9 +5720,10 @@ function onlineLocTick() {
 }
 
 async function onlineCandles() {
-  if (!ON || !ON.room || !ON.candleT) return;
+  if (!ON || !ON.room || !ON.candleT || ON.room.phase !== 'night') return;
   const r = await ON.sb.rpc('night_progress', { p_room: ON.roomId });
   if (!r.error && r.data) {
+    if (!ON || !ON.room || ON.room.phase !== 'night') return; /* the dawn may have come while we asked */
     const before = ON.candles ? ON.candles.done : 0;
     ON.candles = r.data;
     if (r.data.done !== before) onlineSanSoft();
@@ -5765,6 +5778,8 @@ function onlineSanDayCtlHTML(I) {
   const dt = (ON.room.settings || {}).dt || 0;
   return `${dt ? `<div class="barTimer" style="margin:.4rem auto;width:max-content" aria-label="Discussion timer"><span class="candleT" aria-hidden="true"><span class="ctW"></span><span class="ctF"></span><span class="ctD"></span></span><span class="btRead"><span id="onTm">--:--</span><small>left</small></span></div>` : ''}
     ${ON.isHost && !ON.voteOpen ? `<button style="width:100%" id="onVoteBtn" onclick="onlineCallVote()"><b>Call the vote</b><small>The table decides on one name.</small></button>` : ''}
+    ${!ON.voteOpen ? `<button class="alt" style="width:100%;margin-top:.4rem" onclick="onlineTableTalk()"><b>Table talk</b><small>One turn each, then the vote.</small></button>` : ''}
+    ${ON.dawn && ON.dawn.log ? `<button class="alt" style="width:100%;margin-top:.4rem" onclick="onlineChronOpen()"><b>Story so far</b><small>What has happened here.</small></button>` : ''}
     ${ON.voteOpen ? '<p class="hint mu">The vote is open — see your ballot.</p>' : ''}`;
 }
 function onlineSanFacesList(I) { return (ON.here || []).filter(r => r.loc === I.myLoc && r.user_id !== ON.uid); }
@@ -5857,6 +5872,50 @@ function onlineSanDayInfoHTML(I) {
   const prompt = `<div class="card promptCard"><p class="bd"><img class="evi" src="${IMG.i_fire}" alt=""> A question for the table</p><p id="onPrompt">${esc(ON.prompt)}</p><div class="promptBtns"><button class="alt" onclick="onlineNewPrompt()">Another question</button></div></div>`;
   return head + chips + table + fallen + prompt;
 }
+function onlineSanWordsHTML(I) {
+  if (!I.dead || I.day) return '';
+  return `<div class="card"><h2>Last words</h2>${(ON.words || []).length ? ON.words.map(w => `<div class="task"><span>${av(w.name)}</span><div><b>${esc(w.name)}</b><p class="mu small" style="margin:0">${esc(w.text)}</p></div></div>`).join('') : '<p class="mu small">None yet.</p>'}</div>`;
+}
+function onlineSanReportHTML(I, modal) {
+  const d = ON.dawn;
+  if (!d) return '';
+  const vic = (d.vic || []).map(v => `<div class="task"><span>${av(v.n)}</span><span>${esc(v.n)}</span><span class="mu small">${d.revealDead && v.r ? esc(v.r) : 'did not wake'}</span></div>`).join('');
+  return `<h2>Dawn, day ${esc(d.day)}</h2>
+    <p class="mu small">${d.headline ? esc(d.headline) : esc(d.calm || 'The village wakes.')}</p>
+    ${vic ? `<div class="card"><h2>The fallen</h2>${vic}</div>` : ''}
+    ${(d.und || []).length ? `<div class="card"><h2>Undone in the night</h2><p class="mu">${(d.und || []).map(esc).join(', ')}</p></div>` : ''}
+    ${onlineReportExtras(d)}
+    <div class="card"><h2>Last words</h2>${(ON.words || []).length ? ON.words.map(w => `<div class="task"><span>${av(w.name)}</span><div><b>${esc(w.name)}</b><p class="mu small" style="margin:0">${esc(w.text)}</p></div></div>`).join('') : '<p class="mu small">The night was quiet in this way.</p>'}</div>
+    ${modal ? '<button class="alt" style="width:100%" onclick="closeDialog()">Close</button>' : `<button style="width:100%" onclick="onlineDayTab('table')"><b>To the table</b><small>Talk it through, then vote.</small></button>`}`;
+}
+function onlineSanTabsHTML(I) {
+  const rep = ON.dayTab === 'rep';
+  return `<div role="tablist" aria-label="Day views" style="display:flex;gap:.4rem;margin:.4rem 0 .6rem"><button role="tab" id="tabRep" class="alt${rep ? ' sel' : ''}" style="flex:1" aria-selected="${rep}" onclick="onlineDayTab('rep')">Night report</button><button role="tab" id="tabTable" class="alt${rep ? '' : ' sel'}" style="flex:1" aria-selected="${!rep}" onclick="onlineDayTab('table')">The table</button></div>`;
+}
+/* flipping tabs only shows/hides; nothing is rebuilt, so the timer and map keep their place */
+function onlineDayTab(t) {
+  if (!ON) return;
+  ON.dayTab = t === 'rep' ? 'rep' : 'table';
+  const rep = ON.dayTab === 'rep';
+  const pr = document.getElementById('panRep'), pt = document.getElementById('panTable');
+  if (!pr || !pt) return;
+  pr.hidden = !rep; pt.hidden = rep;
+  [['tabRep', rep], ['tabTable', !rep]].forEach(([id, on]) => { const b = document.getElementById(id); if (b) { b.setAttribute('aria-selected', String(on)); b.classList.toggle('sel', on); } });
+  haptic(8); window.scrollTo(0, 0);
+}
+/* one thing per night: once it is done, the candle lights by itself */
+async function onlineAutoFinish() {
+  if (!ON || ON.autoFin || ON.finDone) return;
+  ON.autoFin = true; ON.finDone = true;
+  try {
+    const r = await onlineHost({ action: 'finish', room: ON.roomId });
+    if (r && r.error) return; /* stay quiet: the Finish button is still there */
+    haptic([20, 40, 60]); sfx('seal');
+    await onlineRefreshLoc();
+    onlineCandles();
+    if (onlineOnSan()) onlineDrawSanctuary();
+  } finally { ON.autoFin = false; }
+}
 function onlineNewPrompt() {
   if (!ON) return;
   ON.prompt = randomPrompt();
@@ -5900,13 +5959,16 @@ function onlineSanSoft() {
   if (!ON || !ON.room || !ON.room.settings || !onlineOnSan()) return;
   const I = onlineSanInfo();
   const root = document.getElementById('sanRoot');
-  if (root.dataset.ph !== (I.day ? 'day' : 'night') || root.dataset.dead !== (I.dead ? '1' : '0')) return;
+  if (root.dataset.ph !== (I.day ? 'day' : 'night')) return; /* a phase change routes and redraws by itself */
+  if (root.dataset.dead !== (I.dead ? '1' : '0')) { onlineDrawSanctuary(); return; } /* my own fate changed: that earns a real redraw */
   const g = id => document.getElementById(id);
   onlineSetHTML(g('sanIntro'), onlineSanIntroHTML(I));
   onlineSetHTML(g('sanTop'), onlineSanTopHTML(I));
   onlineSetHTML(g('sanHost'), onlineSanHostHTML(I));
   onlineSetHTML(g('sanDayCtl'), onlineSanDayCtlHTML(I));
   onlineSetHTML(g('sanDayInfo'), onlineSanDayInfoHTML(I));
+  onlineSetHTML(g('sanReport'), onlineSanReportHTML(I));
+  onlineSetHTML(g('sanWords'), onlineSanWordsHTML(I));
   if (g('sanFaces')) { onlineSanBuzz(I); onlineSetHTML(g('sanFaces'), onlineSanFacesHTML(I)); }
   /* room buttons keep their node (a finger may be on one): only text and class move */
   document.querySelectorAll('#sanGrid .sanRoom').forEach(b => {
@@ -5918,27 +5980,36 @@ function onlineSanSoft() {
   if (I.day && !ON.dtT) onlineStartTimer();
 }
 
+function onlineIntoDay() { onlineDayTab('table'); }
 function onlineDrawSanctuary() {
   if (!ON || !ON.room || !ON.room.settings) return;
+  ON.voteWait = false;
   const I = onlineSanInfo();
   onlineSanBuzz(I);
-  PHASE = I.day ? 'day' : 'night'; theme(I.key, I.day ? 'd' : 'n');
+  PHASE = I.day ? 'day' : 'night'; theme(I.key, I.day ? 'd' : 'n'); try { startAmbient(); } catch (e) { }
+  const tabbed = I.day && !!ON.dawn, rep = tabbed && ON.dayTab === 'rep';
   show(`<div id="sanRoot" data-ph="${I.day ? 'day' : 'night'}" data-dead="${I.dead ? 1 : 0}">
     <h1>The sanctuary ${I.day ? '' : onlineMoon('sm')}</h1>
     <p class="mu small" id="sanIntro">${onlineSanIntroHTML(I)}</p>
+    ${tabbed ? onlineSanTabsHTML(I) : ''}
+    ${tabbed ? `<div id="panRep"${rep ? '' : ' hidden'}><div id="sanReport">${onlineSanReportHTML(I)}</div></div>` : ''}
+    <div id="panTable"${rep ? ' hidden' : ''}>
     ${I.day ? '' : onlineEventBadge()}
     <div id="sanDayInfo">${onlineSanDayInfoHTML(I)}</div>
     <div id="sanTop">${onlineSanTopHTML(I)}</div>
     <div id="sanHost">${onlineSanHostHTML(I)}</div>
+    <div id="sanWords">${onlineSanWordsHTML(I)}</div>
     <div id="sanDayCtl">${onlineSanDayCtlHTML(I)}</div>
     ${(I.day || I.dead) ? (I.dead ? '' : `<div style="display:flex;gap:.5rem;margin:.4rem 0"><button class="alt" style="flex:1" onclick="onlinePeek()">View role</button></div>`) : onlineSanMeHTML(I)}
     ${onlineSanMapHTML(I)}
+    </div>
   </div>`);
   /* the patch regions were just written; remember them so a no-change patch is a no-op */
-  ['sanIntro', 'sanTop', 'sanHost', 'sanDayCtl', 'sanDayInfo', 'sanFaces'].forEach(id => {
+  ['sanIntro', 'sanTop', 'sanHost', 'sanWords', 'sanDayCtl', 'sanDayInfo', 'sanReport', 'sanFaces'].forEach(id => {
     const el = document.getElementById(id); if (el) el.__h = el.innerHTML;
   });
   onlineSanAfterDraw(I);
+  if (!I.day && !I.dead && ON.spent && !I.mySettled && !ON.finDone) onlineAutoFinish();
 }
 
 function onlineMapTap(e) {
@@ -6043,12 +6114,13 @@ function onlineDyingWords() {
   const me = (ON.players || []).find(p => p.user_id === ON.uid);
   if (!me || me.is_alive) { onlineDrawSanctuary(); return; }
   ON.saidWords = ON.saidWords || false;
+  const voted = !!(ON.voteEv && ON.voteEv.outName === me.name);
   const meRow = (ON.here || []).find(r => r.user_id === ON.uid);
   const where = meRow != null && ON.room.settings && MAPS[(ON.room.settings.key || 'barrio')].rooms[meRow.loc]
     ? MAPS[ON.room.settings.key || 'barrio'].rooms[meRow.loc][0] : 'somewhere';
   show(`<h1>Your night is over</h1>
-    <div class="card"><p class="bd">${esc(me.name)} — found in the ${esc(where)}.</p>
-    <p class="mu">You will not be told who did this. Leave some last words: every living phone will read them, with your name under them.</p>
+    <div class="card"><p class="bd">${voted ? esc(me.name) + ' — voted out by the table.' : esc(me.name) + ' — found in the ' + esc(where) + '.'}</p>
+    <p class="mu">${voted ? 'The table has spoken.' : 'You will not be told who did this.'} Leave some last words: every living phone will read them, with your name under them.</p>
     ${ON.saidWords ? '<p class="hint mu">Your words are already in the air.</p>' : `
       <textarea id="lw" maxlength="280" rows="3" style="width:100%" aria-label="Your last words" placeholder="Say something the living can use…"></textarea>
       <p class="mu small" id="lwc">280 characters</p>
@@ -6082,21 +6154,24 @@ function onlineLastWord(w) {
   ON.words = ON.words || [];
   ON.words.push({ name: p ? p.name : 'Someone', text: w.text, at: w.at });
   sfx('paper');
+  onlineSanSoft();
 }
 
 function onlineSpectate() {
   if (!ON) return;
-  show(`<h1>The table talks</h1><p class="mu small">The fallen watch the public screens only.</p>
-    <div class="card"><h2>Last words</h2>
-    ${(ON.words || []).length ? ON.words.map(w => `<div class="task"><span>${av(w.name)}</span><div><b>${esc(w.name)}</b><p class="mu small" style="margin:0">${esc(w.text)}</p></div></div>`).join('') : '<p class="mu small">None yet.</p>'}
-    </div>
-    <button class="alt" style="width:100%" onclick="onlineRoute()">Refresh</button>`);
+  ON.watching = true;
+  onlineDrawSanctuary();
 }
 
 /* ---------- dawn: every candle lit ---------- */
 function onlineWaitDawn() {
-  if (!ON || !ON.room) return;
+  if (!ON || !ON.room || ON.room.phase !== 'night' || ON.hold) return;
   ON.room = { ...ON.room, phase: ON.room.phase }; /* keep until the Grey Host flips it */
+  /* every candle burns: if the dawn has not come within a few seconds, the host's phone brings it (quietly) */
+  if (ON.isHost && !ON.autoDawnT) ON.autoDawnT = setTimeout(async () => {
+    ON.autoDawnT = 0;
+    if (ON && ON.room && ON.room.phase === 'night') await onlineHost({ action: 'force-dawn', room: ON.roomId });
+  }, 5000);
   show(`<h1>Every candle burns</h1>
     <p class="mu small">All the living have finished their night. Dawn is written…</p>
     ${onlineCandleRow()}
@@ -6107,12 +6182,75 @@ function onlineWaitDawn() {
 }
 
 /* ---------- ended ---------- */
+function onlineFinalEdition(m) {
+  const t = /jester/i.test(m || '') ? 'j' : /serial|arsonist|cult/i.test(m || '') ? 'k' : /werewolves/i.test(m || '') ? 'w' : /village/i.test(m || '') ? 'v' : 'n';
+  const key = (ON.room && ON.room.settings && ON.room.settings.key) || 'barrio';
+  const place = (PLACES[key] || PLACES.barrio).name;
+  const E = ON.endData || {};
+  const nights = (E.stats && E.stats.nights) || (ON.dawn && ON.dawn.day) || (ON.nightEv && ON.nightEv.day) || 1;
+  const gone = (ON.players || []).filter(p => !p.is_alive);
+  const goneN = E.stats ? E.stats.dead : gone.length;
+  const obits = (E.obits ? E.obits.map(o => `<div class="feObit"><b>${esc(o.n)}</b><small>${esc(o.how)}${o.role ? ' · the ' + esc(o.role) : ''} · morning of day ${esc(o.d)}</small></div>`) : gone.map(p => `<div class="feObit"><b>${esc(p.name)}</b><small>Rest now</small></div>`)).join('');
+  return `<div class="finalEd fe-${t}"><p class="feMast">The Unsigned</p><p class="feRule">Final Edition · ${esc(place)} · ${nights} night${nights === 1 ? '' : 's'} · ${goneN} gone</p><h1 class="feHead">${esc((m || '').split('.')[0] || 'The story ends')}</h1><div class="feObits">${obits || '<p class="feObit mu">No lives were lost. The presses had little to print.</p>'}</div></div>`;
+}
+function onlineEndArt(m) {
+  const t = /jester/i.test(m || '') ? 'j' : /serial|arsonist|cult/i.test(m || '') ? 'k' : /werewolves/i.test(m || '') ? 'w' : /village/i.test(m || '') ? 'v' : 'n';
+  const col = t === 'v' ? '#7fb69a' : '#d9645f';
+  const art = t === 'n' ? `<img class="sk big" src="${IMG.skull}" alt="">` : `<img class="winart" src="${IMG['win_' + t]}" alt="">`;
+  return `<div class="endart">${art}<h1 style="color:${col}">${esc(m)}</h1></div>`;
+}
 function onlineEpilogue() {
   const m = (ON && ON.endMsg) || '';
-  show(`<h1>The night ends</h1>
+  PHASE = 'end';
+  try { stopAmbient(); } catch (e) { }
+  clearInterval(ON.dtT); ON.dtT = 0;
+  const key = (ON.room && ON.room.settings && ON.room.settings.key) || 'barrio';
+  theme(key, /village/i.test(m) ? 'd' : 'n');
+  show(`${onlineFinalEdition(m)}${m ? onlineEndArt(m) : ''}${onlineEndExtras()}
+    <h1>The night ends</h1>
     ${m ? `<div class="card"><p class="bd">The village ledger</p><p style="font-size:1.15rem">${esc(m)}</p></div>` : ''}
     <p class="mu small">The Grey Host has closed the table's story.</p>
+    <button class="alt" style="width:100%;margin-bottom:.4rem" onclick="onlineShareResult()">Share the result</button>
+    ${ON.endData && ON.endData.recap ? '<button class="alt" style="width:100%;margin-bottom:.4rem" onclick="onlineShareRecap()">Share the recap</button>' : ''}
     <button style="width:100%" onclick="onlineLeaveAsk()">Leave the table</button>`);
+  const a = document.getElementById('app'); if (a) a.classList.add('fin');
+  sfx('bell');
+  setTimeout(() => { if (document.querySelector('.finalEd')) { winStorm(m); sparkle(''); } }, 700);
+}
+
+async function onlineShareResult() {
+  const m = (ON && ON.endMsg) || 'The story ends';
+  const key = (ON.room && ON.room.settings && ON.room.settings.key) || 'barrio';
+  const place = (PLACES[key] || PLACES.barrio).name;
+  const nights = (ON.dawn && ON.dawn.day) || (ON.nightEv && ON.nightEv.day) || 1;
+  const gone = (ON.players || []).filter(p => !p.is_alive).length;
+  const text = `Unsigned — ${m}\n${place} · ${nights} night${nights === 1 ? '' : 's'} · ${gone} gone`;
+  try {
+    if (navigator.share) await navigator.share({ title: 'Unsigned', text });
+    else if (navigator.clipboard) { await navigator.clipboard.writeText(text); toast('Result copied to the clipboard.'); }
+    else toast('Sharing is not available in this browser.');
+  } catch (e) { }
+}
+
+/* the closing pages the Grey Host now sends: the story, the reckoning, the honours and the cast */
+function onlineEndExtras() {
+  const E = ON.endData || {};
+  let h = '';
+  if (E.recap && E.recap.length) h += `<div class="card recap"><h2>The story</h2>${E.recap.map(l => `<div class="lgl">${esc(l)}</div>`).join('')}</div>`;
+  if (E.stats) h += `<div class="card"><h2>The reckoning</h2><div class="statsGrid"><div class="statBox"><b>${esc(E.stats.nights)}</b><small>night${E.stats.nights === 1 ? '' : 's'}</small></div><div class="statBox"><b>${esc(E.stats.dead)}</b><small>dead</small></div><div class="statBox"><b>${esc(E.stats.done)}/${esc(E.stats.goal)}</b><small>tasks done</small></div><div class="statBox"><b>${esc(E.stats.alive)}/${esc(E.stats.total)}</b><small>still living</small></div></div><p class="mu small">The village needed ${esc(E.stats.goal)} tasks. Every death narrowed the circle.</p></div>`;
+  if (E.awards) h += `<div class="card"><h2>The table remembers</h2>${E.awards.length ? `<div class="awardList">${E.awards.map(x => `<div class="awardRow"><b>${esc(x[0])}</b><span>${esc(x[1])}</span></div>`).join('')}</div>` : '<p class="mu">No clean honours. Only the story.</p>'}</div>`;
+  if (E.cast) h += `<div class="card"><h2>The cast</h2>${E.cast.map(p => `<div class="task"><span>${esc(p.n)}</span><span class="${p.a ? '' : 'mu'}">${esc(p.r)}${p.a ? '' : ' <img class="sk" src="' + IMG.skull + '" alt="dead">'}</span><span class="mu small">${esc(p.team || '')}</span></div>`).join('')}</div>`;
+  return h;
+}
+async function onlineShareRecap() {
+  const E = (ON && ON.endData) || {};
+  const place = (PLACES[onlineKey()] || PLACES.barrio).name;
+  const text = `Unsigned — ${(ON && ON.endMsg) || ''}\n${place}\n\n` + (E.cast || []).map(p => `${p.n}: ${p.r}${p.a ? '' : ' (dead)'}`).join('\n') + (E.stats ? `\n\nTasks: ${E.stats.done}/${E.stats.goal} · Deaths: ${E.stats.dead}\n` : '\n') + (E.recap || []).join('\n');
+  try {
+    if (navigator.share) await navigator.share({ title: 'Unsigned', text });
+    else if (navigator.clipboard) { await navigator.clipboard.writeText(text); toast('Recap copied to the clipboard.'); }
+    else toast('Sharing is not available in this browser.');
+  } catch (e) { }
 }
 
 /* ================= M4: the Grey Host's mail, actions, votes, dawns ================= */
@@ -6139,11 +6277,12 @@ function onlineMail(d) {
   const kind = d.kind, data = d.data || {};
   if (kind === 'note') { sfx('paper'); haptic(20); toast('A letter has arrived for your eyes only.'); onlineSanSoft(); return; }
   if (kind === 'state') { ON.state = data; return; }
-  if (kind === 'night') { ON.nightEv = data; ON.dayEnd = 0; ON.prompt = null; ON.spent = null; ON.myVote = null; ON.voteSeen = true; ON.pot = null; ON.smode = null; ON.room = { ...ON.room, phase: 'night' }; sfx('night'); onlineRoute(); return; }
+  if (kind === 'night') { ON.nightEv = data; ON.dayEnd = 0; ON.prompt = null; ON.spent = null; ON.finDone = false; clearTimeout(ON.autoDawnT); ON.autoDawnT = 0; ON.dayTab = 'table'; ON.voteWait = false; ON.inReveal = false; ON.myVote = null; ON.voteSeen = true; ON.pot = null; ON.smode = null; ON.room = { ...ON.room, phase: 'night' }; sfx('night'); onlineRoute(); return; }
   if (kind === 'dawn') {
-    ON.dawn = data; ON.room = { ...ON.room, phase: 'day' }; sfx('paper');
+    ON.dawn = data; ON.storyLog = data.log || null; ON.dayTab = 'rep'; ON.room = { ...ON.room, phase: 'day' }; sfx('paper');
     { const dt = (ON.room.settings || {}).dt || 0; ON.dayEnd = dt ? Date.now() + dt * 1000 : 0; ON.dtDone = 0; ON.dtWarn = 0; }
     const me = (ON.players || []).find(p => p.user_id === ON.uid);
+    if (me && (data.vic || []).some(v => v.n === me.name)) me.is_alive = false; /* the card is the truth */
     if (me && !me.is_alive) { onlineDyingWords(); return; }
     onlineRoute();
     onlineDawnReport();
@@ -6151,12 +6290,14 @@ function onlineMail(d) {
   }
   if (kind === 'vote_open') {
     ON.voteOpen = data; ON.myVote = null; sfx('seal');
+    ON.aliveAtVote = (ON.players || []).filter(p => p.is_alive).map(p => p.name); ON.voteWait = true;
+    if (ON.hold) { ON.heldVote = true; onlineRefreshAfterLabel(); return; }
     const me = (ON.players || []).find(p => p.user_id === ON.uid);
     if (me && me.is_alive) onlineVoteScreen();
     return;
   }
-  if (kind === 'vote') { ON.voteEv = data; ON.voteOpen = null; ON.voteSeen = false; onlineSanSoft(); return; }
-  if (kind === 'end') { ON.endMsg = data.text; ON.room = { ...ON.room, phase: 'ended' }; onlineEpilogue(); return; }
+  if (kind === 'vote') { ON.voteEv = data; ON.storyLog = data.log || ON.storyLog; ON.voteOpen = null; ON.voteSeen = false; onlineVoteSeen(); return; }
+  if (kind === 'end') { ON.endMsg = data.text; ON.endData = data; ON.room = { ...ON.room, phase: 'ended' }; if (ON.hold) { ON.heldEnd = true; onlineRefreshAfterLabel(); return; } onlineEpilogue(); return; }
 }
 
 /* ---------- tasks in my room ---------- */
@@ -6395,18 +6536,58 @@ async function onlineCallVote() {
   if (r && r.error) { toast(String(r.error.message || 'The vote could not open.')); return; }
   toast('The vote is open.');
 }
+/* ---------- v4.1: voting at the round table (same table as pass-and-play) ---------- */
+function onlineVotePlayers() { return (ON.players || []).map(p => ({ n: p.name, a: p.is_alive })); }
+function onlineMyIndex() { return (ON.players || []).findIndex(p => p.user_id === ON.uid); }
+function onlineVoteCandIdx() {
+  const cand = ON.voteOpen && ON.voteOpen.cand;
+  if (!cand) return null;
+  return (ON.players || []).map((p, j) => cand.includes(p.name) ? j : -1).filter(j => j >= 0);
+}
 function onlineVoteScreen() {
   if (!ON || !ON.voteOpen) return;
+  PHASE = 'vote'; ON.voteWait = true; try { startAmbient(); } catch (e) { }
   const alive = (ON.players || []).map((p, j) => ({ p, j })).filter(x => x.p.is_alive);
   const cand = ON.voteOpen.cand || null;
   const pool = cand ? alive.filter(x => cand.includes(x.p.name)) : alive;
-  show(`<h2>The vote${ON.voteOpen.runoff ? ' · runoff' : ''}</h2>
+  const me = onlineMyIndex(), candIx = onlineVoteCandIdx();
+  const table = seatTable({
+    P: onlineVotePlayers(), art: IMG.day_gather, voter: me, pick: true, cand: candIx || undefined, pickFn: 'onlineSeatPick',
+    center: `<span class="bd">${ON.voteOpen.runoff ? 'The runoff' : 'The vote'}</span><b>Who should leave?</b><small>Tap a seated player</small>`
+  });
+  show(`<div class="voteHead"><h2>The vote${ON.voteOpen.runoff ? ' · runoff' : ''}</h2><button class="alt" onclick="onlineReportModal()">Night report</button></div>
     <p class="mu">${cand ? 'Only the tied players can receive votes now.' : 'Point at one name — or abstain. The reveal comes when every ballot is in.'}</p>
-    <div class="card">${pool.map(x => `<button class="alt choice${ON.myVote === x.j ? ' sel' : ''}" onclick="onlinePickVote(${x.j})">${av(x.p.name)}<b>${esc(x.p.name)}</b></button>`).join('')}</div>
-    <button style="width:100%" ${ON.myVote == null ? 'disabled' : ''} onclick="onlineCastVote()">Cast the ballot</button>
-    <button class="alt" style="width:100%;margin-top:.4rem" onclick="onlinePickVote(-1);onlineCastVote()">Abstain</button>
+    ${table}
+    <p class="hint mu small">Or choose from the list:</p>
+    <div class="card">${pool.map(x => `<button class="alt choice${ON.myVote === x.j ? ' sel' : ''}" data-j="${x.j}" onclick="onlinePickVote(${x.j})">${av(x.p.name)}<b>${esc(x.p.name)}</b></button>`).join('')}</div>
+    <button id="castBtn" style="width:100%" ${ON.myVote == null ? 'disabled' : ''} onclick="onlineConfirmVote()">Cast the ballot</button>
+    <button class="alt" style="width:100%;margin-top:.4rem" onclick="ON.myVote = -1; onlineConfirmVote()">Abstain</button>
     ${ON.isHost ? `<button class="alt" style="width:100%;margin-top:.4rem" onclick="onlineForceVote()"><b>Close the vote now</b><small>Host: count what is in; missing ballots abstain.</small></button>` : ''}
     <button class="alt" style="width:100%;margin-top:.4rem" onclick="onlineDrawSanctuary()">Wait on the map</button>`);
+  if (typeof ON.myVote === 'number' && ON.myVote >= 0) {
+    const sEl = document.querySelector('.seat[data-i="' + ON.myVote + '"]'); if (sEl) sEl.classList.add('sel');
+  }
+}
+/* tapping a seat only marks it: nothing is rebuilt, so the table stays put */
+function onlineSeatPick(i, el) {
+  const cand = onlineVoteCandIdx();
+  if (cand && !cand.includes(i)) { toast('Only the tied players can receive votes in the runoff.'); sfx('error'); return; }
+  ON.myVote = i;
+  document.querySelectorAll('.seat,.choice').forEach(b => b.classList.remove('sel'));
+  if (el) el.classList.add('sel');
+  document.querySelectorAll('.choice').forEach(b => { if (+b.dataset.j === i) b.classList.add('sel'); });
+  const cb = document.getElementById('castBtn'); if (cb) cb.disabled = false;
+  haptic(10);
+}
+/* a ballot is final, so ask once before it leaves */
+function onlineConfirmVote() {
+  if (typeof ON.myVote !== 'number') { toast('Choose someone, or abstain.'); sfx('error'); return; }
+  const who = ON.myVote < 0 ? 'abstain' : 'vote for ' + ((ON.players[ON.myVote] || {}).name || '?');
+  openDialog(`<h2>Confirm your vote?</h2><p>You are about to <b>${esc(who)}</b>.</p><p class="mu small">Your vote is final for this round.</p><button onclick="closeDialog();onlineCastVote()">Confirm vote</button><button class="alt" onclick="closeDialog()">Change it</button>`, 'Confirm vote');
+}
+function onlineReportModal() {
+  if (!ON || !ON.dawn) { toast('There is no night report on this phone yet.'); return; }
+  openDialog(`<div class="reportBody">${onlineSanReportHTML(null, true)}</div>`, 'Night report');
 }
 
 async function onlineForceVote() {
@@ -6422,31 +6603,241 @@ async function onlineCastVote() {
   const r = await onlineHost({ action: 'vote', room: ON.roomId, target });
   if (r && r.error) { toast(String(r.error.message || 'The ballot was refused.')); sfx('error'); onlineVoteScreen(); return; }
   ON.myBallot = true; sfx('seal'); haptic(20);
-  show(`<h2>Your ballot is in</h2><p class="mu small">The reveal comes when every living hand has voted.</p>
+  show(`<h2>Your ballot is in</h2>${seatTable({ P: onlineVotePlayers(), art: IMG.day_gather, center: '<span class="bd">The vote</span><b>Ballot in</b><small>Waiting for the table</small>' })}<p class="mu small">The reveal comes when every living hand has voted.</p>
     <button class="alt" style="width:100%" onclick="onlineDrawSanctuary()">Wait on the map</button>`);
 }
+/* ---------- v4.1: the reveal, as at the table: sealed name, drum, accused seat, arrows, wax, tally ---------- */
+function onlineVoteOut(v) {
+  /* the server's own word if it sends one; else whoever was alive when the vote opened and is gone now */
+  const P = ON.players || [];
+  if (v && v.outName) { const k = P.findIndex(p => p.name === v.outName); if (k >= 0) return k; }
+  if (v && v.out != null) {
+    const j = typeof v.out === 'number' ? v.out : P.findIndex(p => p.name === v.out || p.user_id === v.out);
+    if (j >= 0) return j;
+  }
+  const before = ON.aliveAtVote || [];
+  const gone = P.map((p, j) => ({ p, j })).filter(x => !x.p.is_alive && before.includes(x.p.name));
+  return gone.length === 1 ? gone[0].j : null;
+}
+function onlineVoteMap(v) {
+  const P = ON.players || [], m = {};
+  (v.votes || []).forEach(x => {
+    const f = P.findIndex(p => p.name === x.from), t = x.to ? P.findIndex(p => p.name === x.to) : -1;
+    if (f >= 0 && t >= 0) m[f] = t;
+  });
+  return m;
+}
+function onlineTallyHTML(v) {
+  const rows = {}; let skipped = 0;
+  (v.votes || []).forEach(x => { if (x.to) rows[x.to] = (rows[x.to] || 0) + 1; else skipped++; });
+  const list = Object.entries(rows).map(([n, c]) => ({ n, c })).sort((a, b) => b.c - a.c);
+  const max = Math.max(1, ...list.map(r => r.c), skipped);
+  return `<div class="tally" aria-label="Vote tally">${list.map(r => `<div class="tallyRow"><span>${esc(r.n)}</span><div class="tallyBar"><i style="width:${r.c / max * 100}%"></i></div><span class="waxDots" aria-hidden="true">${'●'.repeat(Math.min(r.c, 12))}</span><b>${r.c}</b></div>`).join('')}${skipped ? `<div class="tallyRow"><span class="mu">Skipped</span><div class="tallyBar"><i style="width:${skipped / max * 100}%"></i></div><span class="waxDots" aria-hidden="true"></span><b>${skipped}</b></div>` : ''}</div>`;
+}
+function onlineVoteLedgerHTML(v) {
+  if (!(v.openVotes && v.votes && v.votes.length)) return '';
+  const rows = v.votes.map(x => `<div class="voteLogRow"><span class="vlWho">${av(x.from)}<b>${esc(x.from)}</b></span><span class="vlArrow" aria-hidden="true">→</span><span class="vlTo">${x.to ? `<b>${esc(x.to)}</b>` : '<span class="mu">abstained</span>'}</span></div>`).join('');
+  return `<div class="card voteLog"><h2>Who voted how</h2><p class="mu small">Every arrow at the table is one player’s vote.</p><div class="voteLogBody">${rows}</div></div>`;
+}
+/* The Grey Host starts the next night (or the runoff, or the ending) in the same breath as the vote's result.
+   The phone holds that next scene back until the reveal has been seen, then walks in. */
+function onlineAfterLabel() {
+  if (ON.heldEnd) return 'See how it ended';
+  if (ON.heldVote) return 'To the runoff vote';
+  if (ON.heldRoute || (ON.room && ON.room.phase === 'night')) return 'On to the night';
+  return 'Back to the day';
+}
+function onlineRefreshAfterLabel() { const b = document.getElementById('rvNext'); if (b) b.textContent = onlineAfterLabel(); }
+function onlineAfterReveal() {
+  if (!ON) return;
+  clearTimeout(ON.holdT); ON.hold = false;
+  if (ON.heldEnd) { ON.heldEnd = false; onlineEpilogue(); return; }
+  if (ON.heldVote && ON.voteOpen) {
+    ON.heldVote = false;
+    const me = (ON.players || []).find(p => p.user_id === ON.uid);
+    if (me && me.is_alive) { onlineVoteScreen(); return; }
+    onlineDrawSanctuary(); return;
+  }
+  if (ON.heldRoute || ON.heldNight) { ON.heldRoute = false; ON.heldNight = false; onlineRoute(); return; }
+  onlineDrawSanctuary();
+}
 function onlineVoteSeen() {
-  ON.voteSeen = true;
+  ON.voteSeen = true; ON.voteWait = false;
+  ON.hold = true; clearTimeout(ON.holdT); ON.holdT = setTimeout(() => { if (ON && ON.hold) onlineAfterReveal(); }, 120000);
+  PHASE = 'vote'; try { startAmbient(); } catch (e) { }
   const v = ON.voteEv || {};
-  const arrows = v.votes && v.openVotes ? v.votes.map(x => `<div class="task"><span>${av(x.from)}</span><b>${esc(x.from)}</b><span class="mu">→ ${x.to ? esc(x.to) : 'abstained'}</span></div>`).join('') : '';
+  const out = onlineVoteOut(v), sealed = out !== null;
+  const voters = (v.votes || []).length;
+  ON.revealCtx = { v, out };
+  const table = seatTable({ P: onlineVotePlayers(), art: IMG.day_gather, preOut: out, center: `<span class="bd">The vote</span><b>${sealed ? 'Sealed' : 'Waiting'}</b><small>${voters ? voters + ' voters' : 'the table'}</small>` });
   show(`<h1>The table decides</h1>
-    <div class="card"><p style="font-size:1.15rem">${esc(v.text || '')}</p></div>
-    ${arrows ? `<div class="card"><h2>Who voted how</h2>${arrows}</div>` : ''}
-    <button style="width:100%" onclick="onlineDrawSanctuary()">Back to the day</button>`);
+    ${sealed ? '<div class="voteSeal" aria-hidden="true">✶</div>' : ''}
+    <div id="tableSlot">${table}</div>
+    <div class="card" id="vResult"><p style="font-size:1.15rem" role="status">${sealed ? 'The votes are in. The name is sealed until the reveal.' : esc(v.text || 'The votes are in.')}</p></div>
+    <div id="tally" style="display:none">${voters ? onlineTallyHTML(v) : ''}</div>
+    <div id="voteLogSlot"></div>
+    <button id="rv" style="width:100%" onclick="onlineVoteReveal()">${sealed ? 'Reveal who was voted out' : 'Reveal the result'}</button>`);
+  sfx('vote');
+  if (sealed) deathFlash();
+}
+/* the roster can land a moment after the result: upgrade a still-unsealed reveal when it does */
+function onlineVoteRefreshSeal() {
+  const ctx = ON && ON.revealCtx;
+  if (!ctx || ctx.out !== null) return;
+  const slot = document.getElementById('tableSlot'), rv = document.getElementById('rv');
+  if (!slot || !rv || rv.disabled) return;
+  const out = onlineVoteOut(ctx.v);
+  if (out === null) return;
+  ctx.out = out;
+  const n = (ctx.v.votes || []).length;
+  slot.innerHTML = seatTable({ P: onlineVotePlayers(), art: IMG.day_gather, preOut: out, center: `<span class="bd">The vote</span><b>Sealed</b><small>${n ? n + ' voters' : 'the table'}</small>` });
+  if (!document.querySelector('.voteSeal')) slot.insertAdjacentHTML('beforebegin', '<div class="voteSeal" aria-hidden="true"></div>');
+  const seal = document.querySelector('.voteSeal'); if (seal) seal.textContent = '✶';
+  const vr = document.getElementById('vResult'); if (vr) vr.innerHTML = '<p style="font-size:1.15rem" role="status">The votes are in. The name is sealed until the reveal.</p>';
+  rv.textContent = 'Reveal who was voted out';
+  deathFlash();
+}
+async function onlineVoteReveal() {
+  const ctx = ON && ON.revealCtx;
+  if (!ctx) { onlineAfterReveal(); return; }
+  const v = ctx.v;
+  let out = ctx.out;
+  if (out === null) {
+    try { await onlineRefreshRoster(); } catch (e) { }
+    out = onlineVoteOut(v); /* the roster may have caught up since */
+  }
+  const seat = out !== null && document.querySelector('.seat[data-i="' + out + '"]');
+  const rv = document.getElementById('rv'); if (rv) rv.disabled = true;
+  sfx('drum');
+  if (seat) seat.classList.add('accused');
+  setTimeout(() => {
+    const slot = document.getElementById('tableSlot');
+    if (!slot) return; /* the player has moved on */
+    if (seat) { seat.classList.remove('accused'); seat.classList.add('banished'); }
+    const open = !!(v.openVotes && v.votes && v.votes.length);
+    const name = out !== null && ON.players[out] ? ON.players[out].name : null;
+    slot.innerHTML = seatTable({ P: onlineVotePlayers(), art: IMG.day_gather, votes: open ? onlineVoteMap(v) : null, out, center: `<span class="bd">The vote</span><b>${name ? esc(name) : 'No one'}</b><small>${name ? 'voted out' : 'the vote'}</small>` });
+    if (out !== null) {
+      const st = slot.querySelector('.seatTable'); if (st) st.classList.add('revealDark');
+      const bs = slot.querySelector('.seat.banished'); if (bs) bs.insertAdjacentHTML('beforeend', '<i class="seatWax" aria-hidden="true"></i>');
+    }
+    const ls = document.getElementById('voteLogSlot'); if (ls) ls.innerHTML = onlineVoteLedgerHTML(v);
+    const vr = document.getElementById('vResult'); if (vr) vr.innerHTML = `<p style="font-size:1.15rem">${esc(v.text || '')}</p>`;
+    const tl = document.getElementById('tally');
+    if (tl && tl.innerHTML.trim()) {
+      tl.style.display = 'block'; tl.classList.add('show');
+      tl.insertAdjacentHTML('afterbegin', `<div class="waxFall" aria-hidden="true">${Array.from({ length: 9 }, (_, i) => `<i style="--x:${(7 + i * 10.4).toFixed(1)}%;--i:${i}"></i>`).join('')}</div>`);
+    }
+    if (v.extra != null && v.extra >= 0) { const es = slot.querySelector('.seat[data-i="' + v.extra + '"]'); if (es) es.classList.add('banished'); }
+    const bt = document.getElementById('rv');
+    if (bt) bt.outerHTML = `<button id="rvNext" style="width:100%" onclick="onlineAfterReveal()">${onlineAfterLabel()}</button>`;
+    sfx('death');
+  }, seat ? 1800 : 800);
 }
 
 /* ---------- dawn ---------- */
+/* the night report is a tab of the day screen (onlineSanReportHTML); it opens first at dawn */
 function onlineDawnReport() {
   if (!ON || !ON.dawn) return;
-  const d = ON.dawn;
-  const vic = (d.vic || []).map(v => `<div class="task"><span>${av(v.n)}</span><span>${esc(v.n)}</span><span class="mu small">${d.revealDead && v.r ? esc(v.r) : 'did not wake'}</span></div>`).join('');
-  show(`<h1>Dawn, day ${d.day}</h1>
-    <p class="mu small">${d.headline ? esc(d.headline) : esc(d.calm || 'The village wakes.')}</p>
-    ${vic ? `<div class="card"><h2>The fallen</h2>${vic}</div>` : ''}
-    ${(d.und || []).length ? `<div class="card"><h2>Undone in the night</h2><p class="mu">${(d.und || []).map(esc).join(', ')}</p></div>` : ''}
-    <div class="card"><h2>Last words</h2>${(ON.words || []).length ? ON.words.map(w => `<div class="task"><span>${av(w.name)}</span><div><b>${esc(w.name)}</b><p class="mu small" style="margin:0">${esc(w.text)}</p></div></div>`).join('') : '<p class="mu small">The night was quiet in this way.</p>'}</div>
-    <button style="width:100%" onclick="onlineDrawSanctuary()">Into the day</button>`);
+  ON.dayTab = 'rep';
   haptic([15, 30, 15]);
+  const vic = ON.dawn.vic || [];
+  if (vic.length) onlineRevealFallen(vic, () => onlineDrawSanctuary()); else onlineDrawSanctuary();
+}
+
+
+/* ---------- v4.1: the dawn death reveal (the candle goes out), before the night report ---------- */
+function onlineRevealFallen(vic, next) {
+  ON.rf = { vic: (vic || []).slice(), i: 0, next };
+  ON.inReveal = true;
+  onlineRfShow();
+}
+function onlineRfShow() {
+  const rf = ON && ON.rf;
+  if (!rf) return;
+  if (!rf.vic.length || rf.i >= rf.vic.length) { const f = rf.next; ON.rf = null; ON.inReveal = false; if (f) f(); return; }
+  const v = rf.vic[rf.i], last = rf.i >= rf.vic.length - 1;
+  const d = ON.dawn || {};
+  const role = d.revealDead && v.r ? (ROLES[v.r] ? ROLES[v.r][0] : v.r) : '';
+  PHASE = 'day';
+  show(`<div class="deathReveal"><p class="bd">Night ${esc(d.day || '')}</p><div class="candleStage" aria-hidden="true"><div class="candle"><span class="smoke"></span><span class="smoke"></span><span class="smoke"></span><div class="flame"></div><div class="body"><i class="waxDrip"></i></div><div class="holder"></div></div></div><h1>${esc(v.n)}</h1>${role ? `<p class="teamPill">${esc(role)}</p>` : ''}<p class="mu small">${last ? 'The village will hear the rest at dawn.' : 'Another did not wake.'}</p><button onclick="onlineRfNext()">${last ? 'Continue' : 'Next'}</button></div>`);
+  const c = document.querySelector('.deathReveal');
+  setTimeout(() => { if (c) c.classList.add('out'); }, 700);
+  document.querySelectorAll('.deathReveal .smoke').forEach((el, i) => { el.style.left = (45 + i * 6) + '%'; el.style.animationDelay = (0.6 + i * .3) + 's'; });
+  sfx('candle');
+}
+function onlineRfNext() {
+  if (!ON || !ON.rf) return;
+  ON.rf.i++;
+  onlineRfShow();
+}
+
+/* ---------- v4.1: table talk (same order on every phone, so it works on whichever phone is passed around) ---------- */
+function onlineTableTalk() {
+  const alive = (ON.players || []).map((p, j) => ({ p, j })).filter(x => x.p.is_alive).map(x => x.j);
+  if (!alive.length) { toast('There is nobody left to speak.'); return; }
+  const day = (ON.dawn && ON.dawn.day) || 1, off = day % alive.length;
+  ON.talk = { order: alive.slice(off).concat(alive.slice(0, off)), i: 0, k: day * 7 };
+  onlineRenderTalk();
+}
+function onlineTalkPrompt() { const t = ON.talk; return PROMPTS[(t.k + t.i) % PROMPTS.length]; }
+function onlineRenderTalk() {
+  const t = ON && ON.talk;
+  if (!t) return;
+  if (t.i >= t.order.length) {
+    openDialog(`<h2>The table has spoken</h2><p class="mu">Every living player has had a turn. Keep the last accusation in mind.</p><div class="talkBtns">${ON.isHost && !ON.voteOpen ? `<button onclick="onlineCloseTalk();onlineCallVote()">Go to the vote</button>` : ''}<button class="alt" onclick="onlineCloseTalk()">Back to the day</button></div>`, 'Table talk');
+    return;
+  }
+  const P = ON.players || [];
+  const p = P[t.order[t.i]]; if (!p) { t.i++; onlineRenderTalk(); return; }
+  const chips = t.order.map((j, k) => `<button class="talkChip${k === t.i ? ' on' : ''}" onclick="onlineTalkJump(${k})">${esc((P[j] || {}).name || '?')}</button>`).join('');
+  openDialog(`<h2>Table talk</h2><p class="mu">One turn each: make one accusation or defend yourself. Keep it under 30 seconds.</p>
+    <div class="talkChips" aria-label="Speaking order">${chips}</div>
+    <div class="talkBox"><div class="who">${esc(p.name)} has the floor</div><p>${esc(onlineTalkPrompt())}</p><small>${t.i + 1} of ${t.order.length} speakers</small></div>
+    <div class="talkBtns"><button onclick="onlineTalkNext()">Next speaker</button><button class="alt" onclick="onlineTalkNewPrompt()">Another prompt</button></div>
+    <button class="alt" onclick="onlineCloseTalk()">Back to the day</button>`, 'Table talk');
+}
+function onlineTalkNext() { if (!ON.talk) return; ON.talk.i++; onlineRenderTalk(); }
+function onlineTalkJump(k) { if (!ON.talk) return; ON.talk.i = Math.max(0, Math.min(ON.talk.order.length, k)); onlineRenderTalk(); }
+function onlineTalkNewPrompt() { if (!ON.talk) return; ON.talk.k += 1; onlineRenderTalk(); }
+function onlineCloseTalk() { ON.talk = null; closeDialog(); }
+
+/* ---------- v4.1: the extra facts the Grey Host now sends with the dawn, the vote and the ending ---------- */
+function onlineKey() { return (ON.room && ON.room.settings && ON.room.settings.key) || 'barrio'; }
+function onlineTaskBoardHTML(d) {
+  const t = d && d.tasks;
+  if (!t) return '';
+  const key = onlineKey(), tk = (PLACES[key] || PLACES.barrio).tk, R = (MAPS[key] || MAPS.barrio).rooms;
+  const g = t.goal || 1, n = (t.done || []).length;
+  const rows = (t.done || []).map(j => tk[j] ? `<div class="task"><span>✓</span><span>${esc(tk[j][0])}</span><span class="mu small">${esc((R[tk[j][2]] || ['?'])[0])}</span></div>` : '').join('');
+  return `<div class="card"><h2>Task board</h2><div class="bar" role="progressbar" aria-valuemin="0" aria-valuemax="${g}" aria-valuenow="${n}" aria-label="Tasks completed"><i style="width:${Math.min(100, n / g * 100)}%"></i></div><p class="mu">${n} of ${g} tasks needed are done.</p>${rows}</div>`;
+}
+function onlineWhereHTML(d) {
+  if (!d) return '';
+  const key = onlineKey(), R = (MAPS[key] || MAPS.barrio).rooms;
+  if (Array.isArray(d.where)) {
+    const by = {};
+    d.where.forEach(w => { (by[w.r] = by[w.r] || []).push(w); });
+    const rows = Object.keys(by).sort((a, b) => a - b).map(r => `<div class="whereRow"><b>${esc((R[r] || ['?'])[0])}</b><span class="faces">${by[r].map(w => `<span class="whoFace">${w.dead ? avd(w.n) : av(w.n)}<small>${esc(w.n)}</small></span>`).join('')}</span></div>`).join('');
+    return `<div class="card"><h2>Where people were</h2><div class="whereList">${rows}</div><p class="mu small">Each portrait shows where a player spent the night. A crossed-out portrait is a player who was found dead.</p></div>`;
+  }
+  if (d.counts && Object.keys(d.counts).length) {
+    const rows = Object.keys(d.counts).sort((a, b) => a - b).map(r => `<div class="whereRow"><b>${esc((R[r] || ['?'])[0])}</b><span class="mu">${d.counts[r]} here</span></div>`).join('');
+    return `<div class="card"><h2>Where people were</h2><div class="whereList">${rows}</div><p class="mu small">Numbers show how many players spent the night in each room.</p></div>`;
+  }
+  return '';
+}
+function onlineStoryHTML(lines) {
+  if (!lines || !lines.length) return '';
+  return `<div class="card recap"><h2>The story so far</h2>${lines.map(l => `<div class="lgl">${esc(l)}</div>`).join('')}</div>`;
+}
+function onlineReportExtras(d) { return onlineTaskBoardHTML(d) + onlineWhereHTML(d) + onlineStoryHTML(d && d.log); }
+function onlineChronOpen() {
+  const lines = ON.storyLog || (ON.dawn && ON.dawn.log) || [];
+  const place = (PLACES[onlineKey()] || PLACES.barrio).name;
+  const night = (ON.dawn && ON.dawn.day) || (ON.nightEv && ON.nightEv.day) || 1;
+  const t = ON.dawn && ON.dawn.tasks;
+  openDialog(`<h2>The story so far</h2><div class="card recap"><h2>${esc(place)} · night ${night}</h2>${lines.length ? lines.map(l => `<div class="lgl">${esc(l)}</div>`).join('') : '<p class="mu">The village starts fresh. Nothing has happened yet.</p>'}${t ? `<p class="mu">${(t.done || []).length} of ${t.goal} needed tasks are done.</p>` : ''}</div><button class="alt" onclick="closeDialog()">Close</button>`, 'The story so far');
 }
 
 /* ---------- letters ---------- */
