@@ -79,6 +79,13 @@ label{display:block}
 .dots{display:flex;flex-wrap:wrap;gap:.3rem;align-items:center}
 .dots i{width:.65rem;height:.65rem;border-radius:50%;border:2px solid var(--mu)}
 .dots i.on{background:var(--gl);border-color:var(--gl)}
+/* v4.1: done tasks are little candle flames; sabotage snuffs one out */
+.dots i.fl{border-color:transparent;background:radial-gradient(circle at 50% 70%,#fff7d2,#ffb84d 55%,rgba(255,120,40,0) 90%);border-radius:50% 50% 45% 45%;width:.7rem;height:1rem;position:relative;box-shadow:0 0 .35rem rgba(255,170,60,.55)}
+.dots i.fl.snuff{background:radial-gradient(circle at 50% 80%,rgba(125,135,155,.6),rgba(125,135,155,0) 75%);box-shadow:none;animation:dotSnuff 1s ease both}
+@keyframes dotSnuff{0%{opacity:1}45%{opacity:.8}100%{opacity:.35}}
+/* inline flame glyph for report lines; the fallen's last words on their card */
+.fl.gl{display:inline-block;vertical-align:-.2rem;margin-right:.35rem;flex:none}
+.epitaph{margin:.4rem 0 0;font-style:italic}
 .hint{text-align:center;font-size:.88rem;margin:.45rem 0}
 .small{font-size:.84rem}
 .scene{height:150px;background:#000 center/cover;border-radius:12px;margin-bottom:.6rem;position:relative;overflow:hidden}
@@ -3427,7 +3434,7 @@ function dayView() {
     ${eventBadge()}
     <div class="dayTable">${dayTableHTML()}</div>
     <div class="report">
-      <div class="card"><h2>What happened</h2>${vic.length ? `<img class="deathart" src="${IMG['dscene_' + S.pl.key]}" alt="">` : ''}${what}${und.map(x => `<p class="bad">Someone sabotaged “${esc(x)}”. It is not done anymore.</p>`).join('')}</div>
+      <div class="card"><h2>What happened</h2>${vic.length ? `<img class="deathart" src="${IMG['dscene_' + S.pl.key]}" alt="">` : ''}${what}${und.map(x => `<p class="bad"><i class="fl snuff gl"></i>Someone sabotaged “${esc(x)}”. It is not done anymore.</p>`).join('')}</div>
       ${dmap(vic)}
       <div class="span2">${board()}</div>
       <div class="span2">${fallen()}${S.log && S.log.length ? `<div class="card"><button class="alt" style="width:100%" onclick="chronOpen()">Read the story so far</button><p class="mu small">Every death and vote since night one — the newspaper remembers.</p></div>` : ''}</div>
@@ -3462,7 +3469,7 @@ function mapHTML(pins) {
 }
 function board() {
   const R = MAPS[S.pl.key].rooms, g = goal();
-  return `<div class="card"><h2>Task board</h2><div class="bar" role="progressbar" aria-valuemin="0" aria-valuemax="${g}" aria-valuenow="${S.done.length}" aria-label="Tasks completed"><i style="width:${Math.min(100, S.done.length / g * 100)}%"></i></div><p class="mu">${S.done.length} of ${g} tasks needed. ${Math.max(0, g - S.done.length)} to go.</p>${R.map((r, ri) => `<div class="task nb"><span>${esc(r[0])}</span><span class="dots">${S.pl.tk.map((t, i) => [t, i]).filter(([t]) => t[2] === ri).map(([t, i]) => `<i class="${S.done.includes(i) ? 'on' : ''}" title="${esc(t[0])} — ${S.done.includes(i) ? 'done' : 'open'}"></i>`).join('')}</span></div>`).join('')}<p class="mu small">Someone did these. Nobody can see who. A filled dot is done.</p></div>`;
+  return `<div class="card"><h2>Task board</h2><div class="bar" role="progressbar" aria-valuemin="0" aria-valuemax="${g}" aria-valuenow="${S.done.length}" aria-label="Tasks completed"><i style="width:${Math.min(100, S.done.length / g * 100)}%"></i></div><p class="mu">${S.done.length} of ${g} tasks needed. ${Math.max(0, g - S.done.length)} to go.</p>${R.map((r, ri) => `<div class="task nb"><span>${esc(r[0])}</span><span class="dots">${S.pl.tk.map((t, i) => [t, i]).filter(([t]) => t[2] === ri).map(([t, i]) => { const done = S.done.includes(i), sab = !done && (S.lastSab || []).includes(t[0]); return `<i class="${done ? 'fl' : (sab ? 'fl snuff' : '')}" title="${esc(t[0])} — ${done ? 'done' : (sab ? 'undone by sabotage' : 'open')}"></i>`; }).join('')}</span></div>`).join('')}<p class="mu small">Someone did these. Nobody can see who. A lit flame is done; a snuffed one was sabotaged.</p></div>`;
 }
 function fallen() {
   const d = S.P.filter(p => !p.a);
@@ -3705,7 +3712,7 @@ function reportModal() {
   const what = vic.length
     ? vic.map(i => `<div class="victimRow">${av(S.P[i].n)}<div><b>${esc(S.P[i].n)}</b><small>${esc(MAPS[S.pl.key].rooms[N.loc[i]] ? MAPS[S.pl.key].rooms[N.loc[i]][0] : 'the dark')}${S.rules && S.rules.revealDead ? ` · the ${esc(ROLES[S.P[i].r][0])}` : ''}</small></div></div>`).join('')
     : `<p>${esc(S.pl.calm)}</p>`;
-  openDialog(`<h2>Night report</h2><div class="report"><div class="card"><h2>What happened</h2>${what}${und.map(x => `<p class="bad">Sabotaged: “${esc(x)}”</p>`).join('')}</div>${dmap(vic)}${board()}${fallen()}</div><button class="alt" onclick="closeDialog()">Close</button>`, 'Night report');
+  openDialog(`<h2>Night report</h2><div class="report"><div class="card"><h2>What happened</h2>${what}${und.map(x => `<p class="bad"><i class="fl snuff gl"></i>Sabotaged: “${esc(x)}”</p>`).join('')}</div>${dmap(vic)}${board()}${fallen()}</div><button class="alt" onclick="closeDialog()">Close</button>`, 'Night report');
 }
 
 /* ---------- win / end ---------- */
@@ -5895,7 +5902,7 @@ function onlineSanReportHTML(I, modal) {
   return `<h2>Dawn, day ${esc(d.day)}</h2>
     <p class="mu small">${d.headline ? esc(d.headline) : esc(d.calm || 'The village wakes.')}</p>
     ${vic ? `<div class="card"><h2>The fallen</h2>${vic}</div>` : ''}
-    ${(d.und || []).length ? `<div class="card"><h2>Undone in the night</h2><p class="mu">${(d.und || []).map(esc).join(', ')}</p></div>` : ''}
+    ${(d.und || []).length ? `<div class="card"><h2>Undone in the night</h2>${(d.und || []).map(x => `<div class="task"><i class="fl snuff gl"></i><span>${esc(x)}</span><span class="mu small">undone by sabotage</span></div>`).join('')}</div>` : ''}
     ${onlineReportExtras(d)}
     <div class="card"><h2>Last words</h2>${W.length ? W.map(w => `<div class="task"><span>${av(w.name)}</span><div><b>${esc(w.name)}</b><p class="mu small" style="margin:0">${esc(w.text)}</p></div></div>`).join('') : '<p class="mu small">The night was quiet in this way.</p>'}</div>
     ${modal ? '<button class="alt" style="width:100%" onclick="closeDialog()">Close</button>' : `<button style="width:100%" onclick="onlineDayTab('table')"><b>To the table</b><small>Talk it through, then vote.</small></button>`}`;
@@ -6778,8 +6785,11 @@ function onlineRfShow() {
   const v = rf.vic[rf.i], last = rf.i >= rf.vic.length - 1;
   const d = /** @type {any} */ (ON.dawn || {});
   const role = d.revealDead && v.r ? (ROLES[v.r] ? ROLES[v.r][0] : v.r) : '';
+  /* epitaph: the fallen's own last words, printed on their card */
+  const ep = ((d.lw || []).find(x => v.uid ? x.uid === v.uid : x.n === v.n) || {}).t
+    || (((ON.words || []).find(x => x.name === v.n) || {}).text || '');
   PHASE = 'day';
-  show(`<div class="deathReveal"><p class="bd">Night ${esc(d.day || '')}</p><div class="candleStage" aria-hidden="true"><div class="candle"><span class="smoke"></span><span class="smoke"></span><span class="smoke"></span><div class="flame"></div><div class="body"><i class="waxDrip"></i></div><div class="holder"></div></div></div><h1>${esc(v.n)}</h1>${role ? `<p class="teamPill">${esc(role)}</p>` : ''}<p class="mu small">${last ? 'The village will hear the rest at dawn.' : 'Another did not wake.'}</p><button onclick="onlineRfNext()">${last ? 'Continue' : 'Next'}</button></div>`);
+  show(`<div class="deathReveal"><p class="bd">Night ${esc(d.day || '')}</p><div class="candleStage" aria-hidden="true"><div class="candle"><span class="smoke"></span><span class="smoke"></span><span class="smoke"></span><div class="flame"></div><div class="body"><i class="waxDrip"></i></div><div class="holder"></div></div></div><h1>${esc(v.n)}</h1>${role ? `<p class="teamPill">${esc(role)}</p>` : ''}${ep ? `<p class="epitaph">“${esc(ep)}”</p>` : ''}<p class="mu small">${last ? 'The village will hear the rest at dawn.' : 'Another did not wake.'}</p><button onclick="onlineRfNext()">${last ? 'Continue' : 'Next'}</button></div>`);
   const c = document.querySelector('.deathReveal');
   setTimeout(() => { if (c) c.classList.add('out'); }, 700);
   document.querySelectorAll('.deathReveal .smoke').forEach((el, i) => { el.style.left = (45 + i * 6) + '%'; el.style.animationDelay = (0.6 + i * .3) + 's'; });
