@@ -1803,7 +1803,7 @@ try { Object.assign(PREFS, JSON.parse(localStorage.getItem(PREF_KEY) || '{}')); 
 
 /* ---------- the village ledger (3.0) ---------- */
 function villageDoc() {
-  try { const d = JSON.parse(localStorage.getItem(VILLAGE_KEY)); return d && d.players ? d : { v: 1, players: {} }; } catch (e) { return { v: 1, players: {} }; }
+  try { const d = JSON.parse(localStorage.getItem(VILLAGE_KEY) || '{}'); return d && d.players ? d : { v: 1, players: {} }; } catch (e) { return { v: 1, players: {} }; }
 }
 function saveVillageDoc(d) { try { localStorage.setItem(VILLAGE_KEY, JSON.stringify(d)); } catch (e) { } }
 function villageKey(n) { return String(n || '').trim().toLowerCase(); }
@@ -1832,6 +1832,7 @@ function villageRecord(msg) {
 }
 
 let NAMES = [];
+/** @type {Record<string, number>} */
 let COUNT = { ...DEF };
 let PK = 'barrio';
 let STEP = 0;
@@ -1842,9 +1843,13 @@ let T = {};
 let AVX = {};
 let DEAL_I = 0;
 let PHASE = 'title';
+/** @type {{ dt: number, rules: Record<string, boolean> }} */
 let DRAFT = { dt: 120, rules: { revealDead: false, nightOneSafe: false, openVotes: true, noEvents: false, hardTasks: false, noSab: false } };
+/** @type {{ t: number, u: number, dt: number | null, [k: string]: any }} the minigame state bag */
 let MG = { t: 0, u: 0, dt: 0 };
-let MGX = null; /* v4.1: online-table context for the task minigames; null means pass-and-play */
+/** @type {import('./game').MGXState | null} v4.1: online-table context for the task minigames; null means pass-and-play */
+let MGX = null;
+/** @type {{ p: number, t: number | null }} */
 let LK = { p: 0, t: null };
 let SPLASH_T = null, SPLASH_NEXT = null;
 let PASSFN = null, PASSMETA = null;
@@ -2175,8 +2180,8 @@ function show(html, ph, opts) {
   const nightPhase = PHASE === 'night' || PHASE === 'deal' || PHASE === 'vote';
   let dk = S ? Math.min(.55, (S.dead || 0) * .1) : 0;
   if (S) dk = Math.min(.7, dk + (nightPhase ? .05 + Math.min(.13, (S.day || 0) * .014) : 0));
-  document.body.style.setProperty('--dk', dk);
-  document.body.style.setProperty('--tint', S ? (nightPhase ? Math.min(.4, .12 + (S.day || 0) * .02) : PHASE === 'day' ? .05 : .1) : 0);
+  document.body.style.setProperty('--dk', String(dk));
+  document.body.style.setProperty('--tint', String(S ? (nightPhase ? Math.min(.4, .12 + (S.day || 0) * .02) : PHASE === 'day' ? .05 : .1) : 0));
   document.body.dataset.phase = String(PHASE || 'title').toLowerCase();
   document.body.dataset.weather = (typeof weatherKind === 'function') ? weatherKind() : 'clear';
   worldLampSync();
@@ -2213,13 +2218,13 @@ function announce(t) { const l = $('#live'); if (l) l.textContent = t; }
 
 /* ---------- title ---------- */
 function title() {
-  clearInterval(MG.dt); MG.dt = 0; clearTimeout(SPLASH_T);
+  clearInterval(MG.dt || 0); MG.dt = 0; clearTimeout(SPLASH_T);
   releaseWake(); stopAmbient(); closeDialog(); CURRENT = null;
   S = null; N = {}; V = {}; T = {}; PHASE = 'title'; DEAL_I = 0;
   const keys = Object.keys(PLACES);
   PK = keys[Math.floor(Math.random() * keys.length)];
   theme(PK, 'n');
-  document.body.style.setProperty('--dk', 0);
+  document.body.style.setProperty('--dk', '0');
   const act = activeSave();
   const draft = readSave();
   const draftOn = draft && draft.phase === 'setup';
@@ -2259,14 +2264,14 @@ function chooseMode() {
 
 /* ---------- lobby / setup ---------- */
 function lobby() {
-  clearInterval(MG.dt); MG.dt = 0; clearTimeout(SPLASH_T);
+  clearInterval(MG.dt || 0); MG.dt = 0; clearTimeout(SPLASH_T);
   releaseWake(); closeDialog(); CURRENT = null;
   S = null; N = {}; V = {}; T = {}; PHASE = 'lobby'; STEP = 0; DEAL_I = 0;
   DRAFT.rules = { revealDead: false, nightOneSafe: false, openVotes: true, noEvents: false, hardTasks: false, noSab: false, ...(DRAFT.rules || {}) };
   if (!NAMES.length) autoLoadLastTable();
   if (AUTOLOADED) { AUTOLOADED = false; setTimeout(() => toast('Loaded your last group. Clear all to start fresh.'), 500); }
   theme(PK, 'n');
-  document.body.style.setProperty('--dk', 0);
+  document.body.style.setProperty('--dk', '0');
   show(`<div class="lobbyHead"><img class="lg sm" src="${IMG.logo}" alt="Unsigned"><div class="lobbyTools"><button class="iconbtn" onclick="openSettings()" aria-label="Settings"><img src="${IMG.ic_set}" alt=""></button><button class="iconbtn" onclick="howTo()" aria-label="How to play">?</button></div></div>
     <nav class="stepper" aria-label="Setup steps">
       <button class="st" id="st0" onclick="goStep(0)"><b>1</b><span>Map</span></button>
@@ -2365,11 +2370,11 @@ function mapPane() {
 function pickPl(k) {
   PK = PLACES[k] ? k : PK;
   document.querySelectorAll('.pc').forEach(c => {
-    const on = c.getAttribute('onclick').includes("'" + PK + "'");
+    const on = (c.getAttribute('onclick') || '').includes("'" + PK + "'");
     c.classList.toggle('sel', on);
     c.setAttribute('aria-pressed', String(on));
     const old = c.querySelector('.pickBadge'); if (old) old.remove();
-    if (on) { const b = document.createElement('span'); b.className = 'pickBadge'; b.textContent = 'Selected'; c.querySelector('.pi').appendChild(b); }
+    if (on) { const pi = c.querySelector('.pi'); if (pi) { const b = document.createElement('span'); b.className = 'pickBadge'; b.textContent = 'Selected'; pi.appendChild(b); } }
   });
   theme(PK, 'n');
   updateSetup(); save('setup');
@@ -2433,7 +2438,7 @@ function perr(msg) {
   if (msg) { sfx('error'); haptic(20); }
 }
 let AUTOLOADED = false;
-document.addEventListener('contextmenu', e => { if (!e.target.closest || !e.target.closest('input,textarea,[contenteditable],.allowMenu')) e.preventDefault(); });
+document.addEventListener('contextmenu', e => { const t = e.target; if (t && t.closest && !t.closest('input,textarea,[contenteditable],.allowMenu')) e.preventDefault(); });
 document.addEventListener('dragstart', e => e.preventDefault());
 function renderRos() {
   const r = $('#ros'); if (!r) return;
@@ -2539,12 +2544,12 @@ function updateSetup() {
   const vc = $('#vcount'); if (vc) vc.textContent = villagers;
   const comp = $('#comp');
   if (comp) {
-    const seg = [
+    const seg = /** @type {Array<[string, number, string]>} */ ([
       ['Werewolves', wolfCount(), 'var(--bl)'],
       ['Neutral', neutCount(), 'var(--purple)'],
       ['Village', Math.max(0, total - wolfCount() - neutCount()), 'var(--ok)'],
       ['Villagers', villagers, 'rgba(255,255,255,.18)']
-    ].filter(x => x[1] > 0);
+    ].filter(x => Number(x[1]) > 0));
     const sum = seg.reduce((a, b) => a + b[1], 0) || 1;
     comp.innerHTML = `<div class="compBar" aria-hidden="true">${seg.map(x => `<i style="width:${x[1] / sum * 100}%;background:${x[2]}"></i>`).join('')}</div><div class="compLegend">${seg.map(x => `<span><i style="background:${x[2]}"></i>${x[0]} <b>${x[1]}</b></span>`).join('')}</div>`;
   }
@@ -2617,6 +2622,7 @@ function seeRole(i) {
   show(`<div class="fr roleRitual"><p class="bd">Secret role · ${esc(S.pl.name)}</p><div class="ritualCard" id="ritualCard"><img src="${IMG.cardback}" alt="A sealed role card" draggable="false"><button class="sealBtn" id="sealBtn" onpointerdown="sealDown(${i})" onpointerup="sealUp()" onpointercancel="sealUp()" onpointerleave="sealUp()" onkeydown="sealKey(event,${i},1)" onkeyup="sealKey(event,${i},0)" aria-label="Hold the wax seal to reveal your role"><svg class="sealRing" viewBox="0 0 100 100" aria-hidden="true"><circle class="rTrack" cx="50" cy="50" r="46"/><circle class="rProg" cx="50" cy="50" r="46" pathLength="100"/></svg><span class="waxDisc" aria-hidden="true"><span class="waxHalf l"></span><span class="waxHalf r"></span><svg class="waxSigil" viewBox="0 0 64 64"><path d="M32 8l5 19 19 5-19 5-5 19-5-19-19-5 19-5z"/></svg><svg class="waxCracks" viewBox="0 0 100 100"><path pathLength="100" d="M50 6L44 28 56 44 40 62 52 78 46 96"/><path pathLength="100" d="M6 50L26 46 38 56 62 44 80 54 96 48"/><path pathLength="100" d="M20 20L36 36M80 22L64 38M24 82L40 66M78 80L62 64"/></svg></span><span class="waxLabel">Hold</span></button></div><p class="mu small">Keep the screen to yourself. Hold the wax until it breaks.</p></div>`);
   save('deal');
 }
+/** @type {{ t: number | null, p: number, i: number | null, done?: boolean }} */
 let SEAL = { t: null, p: 0, i: null };
 function sealKey(e, i, down) {
   if (e.key !== ' ' && e.key !== 'Enter') return;
@@ -2633,7 +2639,7 @@ function sealDown(i) {
     SEAL.p += 5;
     if (btn) btn.style.setProperty('--p', (Math.min(100, SEAL.p) / 100).toFixed(3));
     if (SEAL.p >= 100) {
-      clearInterval(SEAL.t); SEAL.t = null; SEAL.done = true;
+      clearInterval(SEAL.t || 0); SEAL.t = null; SEAL.done = true;
       const id = SEAL.i;
       if (btn) { btn.classList.remove('holding'); btn.classList.add('broke'); }
       haptic([20, 40, 60]); sfx('seal');
@@ -2647,7 +2653,7 @@ function sealUp() {
   if (SEAL.t) { clearInterval(SEAL.t); SEAL.t = null; }
   SEAL.p = 0;
   const btn = document.getElementById('sealBtn');
-  if (btn) { btn.classList.remove('holding'); btn.style.setProperty('--p', 0); }
+  if (btn) { btn.classList.remove('holding'); btn.style.setProperty('--p', '0'); }
 }
 function revealRole(i) {
   const p = S.P[i]; if (!p) { night(); return; }
@@ -2661,7 +2667,7 @@ function revealRole(i) {
 
 /* ---------- night shell ---------- */
 function night() {
-  mgStop(); clearInterval(MG.dt); MG.dt = 0;
+  mgStop(); clearInterval(MG.dt || 0); MG.dt = 0;
   clearToast();
   S.day++;
   N = { q: S.P.map((p, i) => i).filter(i => S.P[i].a), i: 0, w: [], pr: [], kl: [], tk: [], loc: {}, sab: [], bg: [], heal: [], poison: [], hunterMark: [], sabT: [], recruit: [], who: {}, ignite: false, event: pickEvent() };
@@ -2708,7 +2714,7 @@ function lkDown(e) {
     if (b) b.style.width = LK.p + '%';
     if (bp) bp.setAttribute('aria-valuenow', String(Math.min(100, LK.p)));
     if (LK.p >= 100) {
-      clearInterval(LK.t); LK.t = null;
+      clearInterval(LK.t || 0); LK.t = null;
       const f = PASSFN; PASSFN = null;
       sfx('pass'); haptic(25);
       if (typeof f === 'function') f();
@@ -3373,7 +3379,7 @@ function arsonIgnite() {
 /* ---------- dawn / day ---------- */
 function goal() { return rcGoal(S.pl.tasks, S.rules); } /* 2.15 The long winter: doubled goal, capped so odd boards stay winnable */
 function dawn() {
-  mgStop(); clearInterval(MG.dt); MG.dt = 0;
+  mgStop(); clearInterval(MG.dt || 0); MG.dt = 0;
   /* v4.0: the resolution math moved to rules-core (single authority for the
      browser bundle and the Grey Host). This shell applies timers, saves and
      screens exactly as before. */
@@ -3447,7 +3453,7 @@ function dmap(vic) {
   const face = i => { const p = S.P[i]; if (!p) return '<span class="mu">?</span>'; return dead.has(i) ? avd(p.n) : av(p.n); };
   const pins = [];
   Object.keys(by).forEach(r => { const g = by[r], k = g.length; g.forEach((i, x) => pins.push({ r: +r, h: face(i), c: 'who', o: (x - (k - 1) / 2) * 1.05 })); });
-  const rows = Object.keys(by).sort((a, b) => a - b).map(r => `<div class="whereRow"><b>${esc(R[r][0])}</b><span class="faces">${by[r].map(i => `<span class="whoFace">${face(i)}<small>${esc((S.P[i] || { n: 'the missing' }).n)}</small></span>`).join('')}</span></div>`).join('');
+  const rows = Object.keys(by).sort((a, b) => +a - +b).map(r => `<div class="whereRow"><b>${esc(R[r][0])}</b><span class="faces">${by[r].map(i => `<span class="whoFace">${face(i)}<small>${esc((S.P[i] || { n: 'the missing' }).n)}</small></span>`).join('')}</span></div>`).join('');
   return `<div class="card"><h2>Where people were</h2>${mapHTML(pins)}<div class="whereList">${rows}</div><p class="mu small">Each portrait shows where a player spent the night. A crossed-out portrait is the player who was found dead.</p></div>`;
 }
 function mapHTML(pins) {
@@ -3484,14 +3490,14 @@ function chronOpen() {
   openDialog(`<h2>The story so far</h2><div class="card recap"><h2>${esc(S.pl.name)} · night ${S.day}</h2>${lines.length ? lines.map(l => `<div class="lgl">${l}</div>`).join('') : '<p class="mu">The village starts fresh. Nothing has happened yet.</p>'}<p class="mu">${S.done.length} of ${goal()} needed tasks are done. ${S.dead} player${S.dead === 1 ? '' : 's'} died.</p>${S.rules && S.rules.revealDead ? '' : '<p class="mu small">Role names stay sealed unless the house rule “Reveal roles at death” is on.</p>'}</div><button class="alt" onclick="closeDialog()">Close</button>`, 'The story so far');
 }
 function startTimer() {
-  clearInterval(MG.dt); MG.dt = 0;
+  clearInterval(MG.dt || 0); MG.dt = 0;
   if (!S || !S.dt || !$('#tm')) return;
   if (!S.dtEnd) S.dtEnd = Date.now() + S.dt * 1000;
   const total = S.dt;
   const f = () => {
     const el = $('#tm'), ring = $('#rg');
-    if (!el) { clearInterval(MG.dt); MG.dt = 0; return; }
-    if (!S || !S.dt) { clearInterval(MG.dt); MG.dt = 0; return; }
+    if (!el) { clearInterval(MG.dt || 0); MG.dt = 0; return; }
+    if (!S || !S.dt) { clearInterval(MG.dt || 0); MG.dt = 0; return; }
     const left = Math.max(0, Math.ceil(((S.dtEnd || 0) - Date.now()) / 1000));
     el.textContent = Math.floor(left / 60) + ':' + String(left % 60).padStart(2, '0');
     el.classList.toggle('low', left <= 10);
@@ -3503,7 +3509,7 @@ function startTimer() {
       bt.classList.toggle('low', left <= 10);
     }
     if (ring) { ring.style.setProperty('--p', Math.min(100, left / total * 100) + '%'); ring.classList.toggle('low', left <= 10); }
-    if (left <= 0) { clearInterval(MG.dt); MG.dt = 0; timeUp(); }
+    if (left <= 0) { clearInterval(MG.dt || 0); MG.dt = 0; timeUp(); }
     else if (left <= 10 && !S.warned) { S.warned = true; announce('Ten seconds of discussion left.'); }
   };
   f();
@@ -3595,7 +3601,7 @@ function roomView(me, live) {
   }).join('')}</div>`;
 }
 function vote(cand) {
-  clearInterval(MG.dt); MG.dt = 0;
+  clearInterval(MG.dt || 0); MG.dt = 0;
   const c = Array.isArray(cand) ? cand.filter(i => S.P[i] && S.P[i].a) : null;
   const prev = (V && V.round === 1 && V.q && V.votes && Object.keys(V.votes).length) ? { round: 1, votes: { ...V.votes }, q: V.q.slice(), c: { ...V.c }, s: V.s } : (V && V.prev) || null;
   V = { q: S.P.map((p, i) => i).filter(i => S.P[i].a), i: 0, c: {}, s: 0, votes: {}, out: null, t: '', tally: [], done: false, cand: c, round: c ? 2 : 1, tie: null, extra: null, prev };
@@ -3705,7 +3711,7 @@ function reportModal() {
 /* ---------- win / end ---------- */
 function win() { return rcWin(S, PHASE, RCT()) || ''; } /* v4.0: body lives in rules-core (rcWin) */
 function chk(n) {
-  clearInterval(MG.dt); MG.dt = 0;
+  clearInterval(MG.dt || 0); MG.dt = 0;
   const m = S.jw ? 'The jester wins. The whole village was fooled.' : win();
   if (m) end(m);
   else if (n === 'vote') vote();
@@ -3714,7 +3720,7 @@ function chk(n) {
 function end(m) {
   if (!S) return;
   S.ended = true; S.endMsg = m; PHASE = 'end'; S.dtEnd = 0;
-  CURRENT = null; PASSFN = null; clearInterval(MG.dt); MG.dt = 0;
+  CURRENT = null; PASSFN = null; clearInterval(MG.dt || 0); MG.dt = 0;
   save('end'); releaseWake(); stopAmbient(); sfx('end');
   const a = $('#app'); a.classList.add('out');
   setTimeout(() => { a.classList.remove('out'); endShow(m); }, 700);
@@ -5265,7 +5271,8 @@ title();
 const SUPA_URL = 'https://kzloisnlieyersbkwgkv.supabase.co';
 const SUPA_KEY = 'sb_publishable_DriYVeIyns9hyyQTQ4-Iew_4v0W2muv';
 const ONNAME_KEY = 'unsigned.onname.v1';
-let ON = null; /* the online session: { sb, uid, roomId, room, isHost, channel, presence } */
+/** @type {import('./game').ONState} the online session - constructed by the host/join flows before any entry point runs */
+let ON = /** @type {any} */ (null); /* { sb, uid, roomId, room, isHost, channel, presence } */
 
 /* ---------- entry ---------- */
 function onlineHome() {
@@ -5319,17 +5326,20 @@ async function onlineGo(kind) {
 
 /* ---------- transport (lazy SDK) ---------- */
 function onlineLoadSdk() {
-  return new Promise((res, rej) => {
+  /** @type {Promise<void>} */
+  const ready = new Promise((res, rej) => {
     if (window.supabase) return res();
     const s = document.createElement('script');
     s.src = 'https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2';
-    s.onload = res;
+    s.onload = () => res();
     s.onerror = () => rej(new Error('Could not reach the refuge (offline? try Wi-Fi).'));
     document.head.appendChild(s);
   });
+  return ready;
 }
 async function onlineClient() {
   await onlineLoadSdk();
+  if (!window.supabase) throw new Error('Could not reach the refuge (offline? try Wi-Fi).');
   return window.supabase.createClient(SUPA_URL, SUPA_KEY, { auth: { persistSession: true, autoRefreshToken: true } });
 }
 async function onlineEnsureAnon(sb) {
@@ -5451,7 +5461,7 @@ function onlineLobbyScreen() {
   const isHost = ON.isHost;
   const room = ON.room || {};
   const players = ON.players || [];
-  const s = room.settings || {};
+  const s = /** @type {any} */ (room.settings || {});
   const cfg = s.count ? onlineCfgInfo(s) : `<p class="mu">The host is choosing the roles, the map and the house rules.</p>`;
   const online = Object.keys(ON.presence || {});
   const at = u => online.includes(u);
@@ -5626,7 +5636,7 @@ async function onlineLeave() {
   try { stopAmbient(); } catch (e) { }
   if (ON.rosterT) { clearInterval(ON.rosterT); ON.rosterT = null; }
   try { await ON.sb.rpc('leave_room'); } catch (e) { }
-  ON = null;
+  ON = /** @type {any} */ (null);
   window.ONCFG = false;
   PHASE = 'title';
   title();
@@ -5652,7 +5662,7 @@ function onlineRoute() {
 /* ---------- the sanctuary screen ---------- */
 async function onlineSanctuary() {
   if (!ON || !ON.room) return;
-  mgStop(); MGX = null; clearInterval(MG.dt); MG.dt = 0; clearInterval(ON.dtT); ON.dtT = 0;
+  mgStop(); MGX = null; clearInterval(MG.dt || 0); MG.dt = 0; clearInterval(ON.dtT); ON.dtT = 0;
   CURRENT = null;
   PHASE = 'night';
   theme(ON.room.settings && ON.room.settings.key || 'barrio', 'n');
@@ -5703,8 +5713,7 @@ async function onlineRefreshLoc() {
     ON.sb.from('presence').select('user_id,loc,settled').eq('room_id', ON.roomId),
     ON.sb.rpc('night_progress', { p_room: ON.roomId })
   ]);
-  if (!cnt.error) ON.counts = {};
-  (cnt.data || []).forEach(c => { ON.counts[c.loc] = c.n; });
+  if (!cnt.error) { ON.counts = {}; const cs = ON.counts; (cnt.data || []).forEach(c => { cs[c.loc] = c.n; }); }
   if (!pres.error) ON.here = pres.data;
   if (!prog.error && prog.data) ON.candles = prog.data;
 }
@@ -5750,14 +5759,15 @@ function onlineOnSan() { return !!document.getElementById('sanRoot'); }
 function onlineSetHTML(el, html) { if (!el || el.__h === html) return; el.__h = html; el.innerHTML = html; }
 
 function onlineSanInfo() {
-  const key = (ON.room.settings && ON.room.settings.key) || 'barrio';
+  const room = ON.room || {};
+  const key = (room.settings && room.settings.key) || 'barrio';
   const map = MAPS[key] || MAPS.barrio;
   const myRow = (ON.here || []).find(r => r.user_id === ON.uid);
   const me = (ON.players || []).find(p => p.user_id === ON.uid);
   return {
     key, map, rooms: map.rooms, me,
     myLoc: myRow ? myRow.loc : null, mySettled: myRow ? myRow.settled : false,
-    dead: !!(me && !me.is_alive), day: ON.room.phase === 'day',
+    dead: !!(me && !me.is_alive), day: room.phase === 'day',
     names: Object.fromEntries((ON.players || []).map(p => [p.user_id, p]))
   };
 }
@@ -5775,7 +5785,7 @@ function onlineSanHostHTML(I) {
 }
 function onlineSanDayCtlHTML(I) {
   if (!I.day || I.dead) return '';
-  const dt = (ON.room.settings || {}).dt || 0;
+  const dt = ((ON.room || {}).settings || {}).dt || 0;
   return `${dt ? `<div class="barTimer" style="margin:.4rem auto;width:max-content" aria-label="Discussion timer"><span class="candleT" aria-hidden="true"><span class="ctW"></span><span class="ctF"></span><span class="ctD"></span></span><span class="btRead"><span id="onTm">--:--</span><small>left</small></span></div>` : ''}
     ${ON.isHost && !ON.voteOpen ? `<button style="width:100%" id="onVoteBtn" onclick="onlineCallVote()"><b>Call the vote</b><small>The table decides on one name.</small></button>` : ''}
     ${!ON.voteOpen ? `<button class="alt" style="width:100%;margin-top:.4rem" onclick="onlineTableTalk()"><b>Table talk</b><small>One turn each, then the vote.</small></button>` : ''}
@@ -5847,7 +5857,7 @@ function onlineSanMapHTML(I) {
 function onlineMoon(mode) {
   const day = (ON.nightEv && ON.nightEv.day) || (ON.dawn && ON.dawn.day);
   if (!day) return '';
-  const blood = (ON.nightEv && ON.nightEv.event && ON.nightEv.event.k === 'bloodmoon' && ON.room.phase !== 'day') ? ' md-blood' : '';
+  const blood = (ON.nightEv && ON.nightEv.event && ON.nightEv.event.k === 'bloodmoon' && ON.room && ON.room.phase !== 'day') ? ' md-blood' : '';
   const seq = ['new', 'wax', 'half', 'gib', 'full', 'gib2', 'half2', 'wax2'];
   return `<div class="moonDisc ${mode || ''} md-${seq[(day - 1) % 8]}${blood}" aria-hidden="true"></div>`;
 }
@@ -5874,18 +5884,20 @@ function onlineSanDayInfoHTML(I) {
 }
 function onlineSanWordsHTML(I) {
   if (!I.dead || I.day) return '';
-  return `<div class="card"><h2>Last words</h2>${(ON.words || []).length ? ON.words.map(w => `<div class="task"><span>${av(w.name)}</span><div><b>${esc(w.name)}</b><p class="mu small" style="margin:0">${esc(w.text)}</p></div></div>`).join('') : '<p class="mu small">None yet.</p>'}</div>`;
+  const W = ON.words || [];
+  return `<div class="card"><h2>Last words</h2>${W.length ? W.map(w => `<div class="task"><span>${av(w.name)}</span><div><b>${esc(w.name)}</b><p class="mu small" style="margin:0">${esc(w.text)}</p></div></div>`).join('') : '<p class="mu small">None yet.</p>'}</div>`;
 }
 function onlineSanReportHTML(I, modal) {
   const d = ON.dawn;
   if (!d) return '';
+  const W = ON.words || [];
   const vic = (d.vic || []).map(v => `<div class="task"><span>${av(v.n)}</span><span>${esc(v.n)}</span><span class="mu small">${d.revealDead && v.r ? esc(v.r) : 'did not wake'}</span></div>`).join('');
   return `<h2>Dawn, day ${esc(d.day)}</h2>
     <p class="mu small">${d.headline ? esc(d.headline) : esc(d.calm || 'The village wakes.')}</p>
     ${vic ? `<div class="card"><h2>The fallen</h2>${vic}</div>` : ''}
     ${(d.und || []).length ? `<div class="card"><h2>Undone in the night</h2><p class="mu">${(d.und || []).map(esc).join(', ')}</p></div>` : ''}
     ${onlineReportExtras(d)}
-    <div class="card"><h2>Last words</h2>${(ON.words || []).length ? ON.words.map(w => `<div class="task"><span>${av(w.name)}</span><div><b>${esc(w.name)}</b><p class="mu small" style="margin:0">${esc(w.text)}</p></div></div>`).join('') : '<p class="mu small">The night was quiet in this way.</p>'}</div>
+    <div class="card"><h2>Last words</h2>${W.length ? W.map(w => `<div class="task"><span>${av(w.name)}</span><div><b>${esc(w.name)}</b><p class="mu small" style="margin:0">${esc(w.text)}</p></div></div>`).join('') : '<p class="mu small">The night was quiet in this way.</p>'}</div>
     ${modal ? '<button class="alt" style="width:100%" onclick="closeDialog()">Close</button>' : `<button style="width:100%" onclick="onlineDayTab('table')"><b>To the table</b><small>Talk it through, then vote.</small></button>`}`;
 }
 function onlineSanTabsHTML(I) {
@@ -5900,7 +5912,8 @@ function onlineDayTab(t) {
   const pr = document.getElementById('panRep'), pt = document.getElementById('panTable');
   if (!pr || !pt) return;
   pr.hidden = !rep; pt.hidden = rep;
-  [['tabRep', rep], ['tabTable', !rep]].forEach(([id, on]) => { const b = document.getElementById(id); if (b) { b.setAttribute('aria-selected', String(on)); b.classList.toggle('sel', on); } });
+  /** @type {Array<[string, boolean]>} */ const tabs = [['tabRep', rep], ['tabTable', !rep]];
+  tabs.forEach(([id, on]) => { const b = document.getElementById(id); if (b) { b.setAttribute('aria-selected', String(on)); b.classList.toggle('sel', !!on); } });
   haptic(8); window.scrollTo(0, 0);
 }
 /* one thing per night: once it is done, the candle lights by itself */
@@ -5923,9 +5936,10 @@ function onlineNewPrompt() {
   haptic(12);
 }
 function onlineStartTimer() {
-  clearInterval(ON.dtT); ON.dtT = 0;
-  const dt = (ON.room.settings || {}).dt || 0;
-  if (!dt || ON.room.phase !== 'day') return;
+  clearInterval(ON.dtT || 0); ON.dtT = 0;
+  const dt = ((ON.room || {}).settings || {}).dt || 0;
+  const room = ON.room;
+  if (!dt || !room || room.phase !== 'day') return;
   if (!ON.dayEnd) ON.dayEnd = Date.now() + dt * 1000;
   const f = () => {
     const el = document.getElementById('onTm');
@@ -5947,7 +5961,7 @@ function onlineSanAfterDraw(I) {
   const R = I.myLoc == null ? null : I.rooms[I.myLoc];
   if (sc && !MAPFULL && R) {
     const mp = sc.querySelector('.map');
-    sc.scrollLeft = Math.max(0, mp.offsetWidth * R[1] / 100 - sc.clientWidth / 2);
+    if (mp) sc.scrollLeft = Math.max(0, mp.offsetWidth * R[1] / 100 - sc.clientWidth / 2);
     const lp = document.getElementById('lamp');
     if (lp) { lp.style.setProperty('--x', R[1] + '%'); lp.style.setProperty('--y', R[2] + '%'); }
   } else if (sc) sc.scrollLeft = 0;
@@ -5959,6 +5973,7 @@ function onlineSanSoft() {
   if (!ON || !ON.room || !ON.room.settings || !onlineOnSan()) return;
   const I = onlineSanInfo();
   const root = document.getElementById('sanRoot');
+  if (!root) return;
   if (root.dataset.ph !== (I.day ? 'day' : 'night')) return; /* a phase change routes and redraws by itself */
   if (root.dataset.dead !== (I.dead ? '1' : '0')) { onlineDrawSanctuary(); return; } /* my own fate changed: that earns a real redraw */
   const g = id => document.getElementById(id);
@@ -5972,7 +5987,7 @@ function onlineSanSoft() {
   if (g('sanFaces')) { onlineSanBuzz(I); onlineSetHTML(g('sanFaces'), onlineSanFacesHTML(I)); }
   /* room buttons keep their node (a finger may be on one): only text and class move */
   document.querySelectorAll('#sanGrid .sanRoom').forEach(b => {
-    const i = +b.dataset.room, n = (ON.counts || {})[i] || 0, here = i === I.myLoc;
+    const i = +(b.dataset.room ?? NaN), n = (ON.counts || {})[i] || 0, here = i === I.myLoc;
     b.classList.toggle('on', here);
     const c = b.querySelector('.sanCount'), t = here ? 'you are here' : (n ? n + ' in the room' : 'empty');
     if (c && c.textContent !== t) c.textContent = t;
@@ -6116,8 +6131,9 @@ function onlineDyingWords() {
   ON.saidWords = ON.saidWords || false;
   const voted = !!(ON.voteEv && ON.voteEv.outName === me.name);
   const meRow = (ON.here || []).find(r => r.user_id === ON.uid);
-  const where = meRow != null && ON.room.settings && MAPS[(ON.room.settings.key || 'barrio')].rooms[meRow.loc]
-    ? MAPS[ON.room.settings.key || 'barrio'].rooms[meRow.loc][0] : 'somewhere';
+  const sk = ON.room && ON.room.settings ? (ON.room.settings.key || 'barrio') : null;
+  const rooms = sk ? MAPS[sk].rooms : null;
+  const where = meRow && meRow.loc != null && rooms && rooms[meRow.loc] ? rooms[meRow.loc][0] : 'somewhere';
   show(`<h1>Your night is over</h1>
     <div class="card"><p class="bd">${voted ? esc(me.name) + ' — voted out by the table.' : esc(me.name) + ' — found in the ' + esc(where) + '.'}</p>
     <p class="mu">${voted ? 'The table has spoken.' : 'You will not be told who did this.'} Leave some last words: every living phone will read them, with your name under them.</p>
@@ -6172,11 +6188,12 @@ function onlineWaitDawn() {
     ON.autoDawnT = 0;
     if (ON && ON.room && ON.room.phase === 'night') await onlineHost({ action: 'force-dawn', room: ON.roomId });
   }, 5000);
+  const W = ON.words || [];
   show(`<h1>Every candle burns</h1>
     <p class="mu small">All the living have finished their night. Dawn is written…</p>
     ${onlineCandleRow()}
     <div class="card"><h2>Last words</h2>
-    ${(ON.words || []).length ? ON.words.map(w => `<div class="task"><span>${av(w.name)}</span><div><b>${esc(w.name)}</b><p class="mu small" style="margin:0">${esc(w.text)}</p></div></div>`).join('') : '<p class="mu small">The night was quiet in this way.</p>'}
+    ${W.length ? W.map(w => `<div class="task"><span>${av(w.name)}</span><div><b>${esc(w.name)}</b><p class="mu small" style="margin:0">${esc(w.text)}</p></div></div>`).join('') : '<p class="mu small">The night was quiet in this way.</p>'}
     </div>
     <p class="hint mu">The dawn report arrives when the Grey Host publishes it.</p>`);
 }
@@ -6259,7 +6276,8 @@ async function onlineShareRecap() {
 function onlineUnread() {
   if (!ON || !ON.mail) return 0;
   ON.seen = ON.seen || {};
-  return ON.mail.filter(m => m.kind === 'note' && !ON.seen[m.id]).length;
+  const seen = ON.seen;
+  return ON.mail.filter(m => m.kind === 'note' && !seen[m.id]).length;
 }
 async function onlineFetchMail() {
   if (!ON || !ON.sb) return;
@@ -6277,7 +6295,7 @@ function onlineMail(d) {
   const kind = d.kind, data = d.data || {};
   if (kind === 'note') { sfx('paper'); haptic(20); toast('A letter has arrived for your eyes only.'); onlineSanSoft(); return; }
   if (kind === 'state') { ON.state = data; return; }
-  if (kind === 'night') { ON.nightEv = data; ON.dayEnd = 0; ON.prompt = null; ON.spent = null; ON.finDone = false; clearTimeout(ON.autoDawnT); ON.autoDawnT = 0; ON.dayTab = 'table'; ON.voteWait = false; ON.inReveal = false; ON.myVote = null; ON.voteSeen = true; ON.pot = null; ON.smode = null; ON.room = { ...ON.room, phase: 'night' }; sfx('night'); onlineRoute(); return; }
+  if (kind === 'night') { ON.nightEv = data; ON.dayEnd = 0; ON.prompt = null; ON.spent = null; ON.finDone = false; clearTimeout(ON.autoDawnT || 0); ON.autoDawnT = 0; ON.dayTab = 'table'; ON.voteWait = false; ON.inReveal = false; ON.myVote = null; ON.voteSeen = true; ON.pot = null; ON.smode = null; ON.room = { ...ON.room, phase: 'night' }; sfx('night'); onlineRoute(); return; }
   if (kind === 'dawn') {
     ON.dawn = data; ON.storyLog = data.log || null; ON.dayTab = 'rep'; ON.room = { ...ON.room, phase: 'day' }; sfx('paper');
     { const dt = (ON.room.settings || {}).dt || 0; ON.dayEnd = dt ? Date.now() + dt * 1000 : 0; ON.dtDone = 0; ON.dtWarn = 0; }
@@ -6306,7 +6324,7 @@ async function onlineTasksHere() {
   mgStop(); MGX = null;
   const myRow = (ON.here || []).find(r => r.user_id === ON.uid);
   if (myRow == null || myRow.loc == null) { toast('Choose a room first.'); return; }
-  const key = ON.room.settings.key || 'barrio';
+  const key = ((ON.room || {}).settings || {}).key || 'barrio';
   const here = (PLACES[key] || PLACES.barrio).tk.map((t, i) => ({ t, i })).filter(x => x.t[2] === myRow.loc);
   const used = ON.spent === 'task' || ON.spent === 'action';
   show(`<h2>Tasks here</h2><p class="mu">Night ${ON.nightEv ? ON.nightEv.day : ''} · ${esc(here.length ? here[0].t[1] : 'this room')}</p>
@@ -6331,7 +6349,7 @@ async function onlineDoTask(t, delay) {
   ON.spent = 'task';
   if (!watching) { toast('Task done.'); return; }
   if (!delay) { sfx('task'); haptic(35); }
-  const tkName = (((PLACES[(ON.room.settings || {}).key || 'barrio'] || PLACES.barrio).tk[t]) || [''])[0];
+  const tkName = (((PLACES[((ON.room || {}).settings || {}).key || 'barrio'] || PLACES.barrio).tk[t]) || [''])[0];
   show(`<div class="splash"><div class="chk">✓</div><h2>${esc(tkName || 'Task done')}</h2><p class="mu">${esc(FL[tkName] || r.result || 'You finish the job.')}</p></div>`);
   setTimeout(() => { if (ON && ON.room && document.querySelector('.splash')) onlineDrawSanctuary(); }, 2300);
 }
@@ -6384,9 +6402,9 @@ function onlineAct() {
 function onlineActScreenDraw() {
   const role = ON.role;
   const me = (ON.players || []).find(p => p.user_id === ON.uid);
-  const ix = (ON.players || []).indexOf(me);
+  const ix = me ? (ON.players || []).indexOf(me) : -1;
   const twin = role === 'detective' || role === 'cupid';
-  const noSab = !!((ON.room.settings.rules || {}).noSab);
+  const noSab = !!((((ON.room || {}).settings || {}).rules || {}).noSab);
   const silent = ON.nightEv && ON.nightEv.event && ON.nightEv.event.k === 'silent';
   const hunter = role === 'werewolf' || role === 'alpha';
   const canSab = hunter && !noSab && !silent;
@@ -6407,8 +6425,8 @@ function onlineActScreenDraw() {
       ${noSab ? '<p class="mu small">House rule: no sabotage. Hunt only.</p>' : ''}${silent ? '<p class="mu small">Silent night: sabotage is forbidden. Hunt only.</p>' : ''}` : ''}
     ${role === 'witch' ? `<div class="row" style="margin-bottom:.6rem"><button class="alt${ON.pot === 'heal' ? ' sel' : ''}" ${noHeal ? 'disabled' : ''} onclick="onlinePot('heal')">${noHeal ? 'Heal used' : 'Heal potion'}</button><button class="alt${ON.pot === 'poison' ? ' sel' : ''}" ${noPoison ? 'disabled' : ''} onclick="onlinePot('poison')">${noPoison ? 'Poison used' : 'Poison potion'}</button></div>` : ''}
     ${role === 'seer' ? `<div class="row" style="margin-bottom:.6rem"><button class="alt${ON.smode === 'quick' ? ' sel' : ''}" onclick="onlineSeerMode('quick')">Quick look · tonight</button><button class="alt${ON.smode === 'deep' ? ' sel' : ''}" onclick="onlineSeerMode('deep')">Deep look · dawn</button></div>` : ''}
-    ${twin ? `<p class="mu small">First: <b>${ON.tg != null ? esc((ON.players[ON.tg] || {}).name || '') : 'choose'}</b> · Second: <b>${ON.tg2 != null ? esc((ON.players[ON.tg2] || {}).name || '') : 'choose'}</b></p>` : ''}
-    ${role === 'doctor' && ON.state && ON.state.lastPr != null ? `<p class="mu small">${esc((ON.players[ON.state.lastPr] || {}).name || '')} was sheltered last night. Pick someone else, or yourself if you still can.</p>` : ''}
+    ${twin ? `<p class="mu small">First: <b>${ON.tg != null ? esc(((ON.players || [])[ON.tg] || {}).name || '') : 'choose'}</b> · Second: <b>${ON.tg2 != null ? esc(((ON.players || [])[ON.tg2] || {}).name || '') : 'choose'}</b></p>` : ''}
+    ${role === 'doctor' && ON.state && ON.state.lastPr != null ? `<p class="mu small">${esc(((ON.players || [])[ON.state.lastPr] || {}).name || '')} was sheltered last night. Pick someone else, or yourself if you still can.</p>` : ''}
     <div class="card">${targets.map(x => `<button class="alt choice${picked(x.j) ? ' sel' : ''}" aria-pressed="${picked(x.j)}" onclick="onlinePickTg(${x.j})">${av(x.p.name)}<b>${esc(x.p.name)}</b><small>${x.j === ix ? 'you' : (twin && ON.tg === x.j) ? 'first' : (twin && ON.tg2 === x.j) ? 'second' : ''}</small></button>`).join('') || '<p class="mu">No valid targets.</p>'}</div>
     <p class="bad" id="oerr" role="status"></p>
     <button onclick="onlineConfirmTg()" ${ready ? '' : 'disabled'}>Confirm target</button>
@@ -6483,7 +6501,7 @@ function onlineReading(text, role) {
 function onlineSabAny() {
   const t = (ON.state || {}).openTasks || [];
   const silent = ON.nightEv && ON.nightEv.event && ON.nightEv.event.k === 'silent';
-  const noSab = !!((ON.room.settings.rules || {}).noSab);
+  const noSab = !!((((ON.room || {}).settings || {}).rules || {}).noSab);
   if (silent || noSab) { show(`<h2>${noSab ? 'No sabotage' : 'Silent night'}</h2><div class="card"><p>Sabotage is forbidden tonight. Do a task or rest instead.</p></div><button class="alt" style="width:100%" onclick="onlineDrawSanctuary()">Back</button>`); return; }
   show(`<h2>Sabotage any task</h2><p class="mu">Night ${ON.nightEv ? ON.nightEv.day : ''}</p>
     <div class="card">${t.length ? t.map(x => `<button class="alt choice${ON.sabT === x.j ? ' sel' : ''}" onclick="onlineSabAnyPick(${x.j})"><b>${esc(x.n)}</b><small>${esc(x.room)}</small></button>`).join('') : '<p class="mu">No task is finished yet. There is nothing to undo.</p>'}</div>
@@ -6575,14 +6593,14 @@ function onlineSeatPick(i, el) {
   ON.myVote = i;
   document.querySelectorAll('.seat,.choice').forEach(b => b.classList.remove('sel'));
   if (el) el.classList.add('sel');
-  document.querySelectorAll('.choice').forEach(b => { if (+b.dataset.j === i) b.classList.add('sel'); });
+  document.querySelectorAll('.choice').forEach(b => { if (+(b.dataset.j ?? NaN) === i) b.classList.add('sel'); });
   const cb = document.getElementById('castBtn'); if (cb) cb.disabled = false;
   haptic(10);
 }
 /* a ballot is final, so ask once before it leaves */
 function onlineConfirmVote() {
   if (typeof ON.myVote !== 'number') { toast('Choose someone, or abstain.'); sfx('error'); return; }
-  const who = ON.myVote < 0 ? 'abstain' : 'vote for ' + ((ON.players[ON.myVote] || {}).name || '?');
+  const who = ON.myVote < 0 ? 'abstain' : 'vote for ' + (((ON.players || [])[ON.myVote] || {}).name || '?');
   openDialog(`<h2>Confirm your vote?</h2><p>You are about to <b>${esc(who)}</b>.</p><p class="mu small">Your vote is final for this round.</p><button onclick="closeDialog();onlineCastVote()">Confirm vote</button><button class="alt" onclick="closeDialog()">Change it</button>`, 'Confirm vote');
 }
 function onlineReportModal() {
@@ -6715,7 +6733,8 @@ async function onlineVoteReveal() {
     if (!slot) return; /* the player has moved on */
     if (seat) { seat.classList.remove('accused'); seat.classList.add('banished'); }
     const open = !!(v.openVotes && v.votes && v.votes.length);
-    const name = out !== null && ON.players[out] ? ON.players[out].name : null;
+    const P = ON.players || [];
+    const name = out !== null && P[out] ? P[out].name : null;
     slot.innerHTML = seatTable({ P: onlineVotePlayers(), art: IMG.day_gather, votes: open ? onlineVoteMap(v) : null, out, center: `<span class="bd">The vote</span><b>${name ? esc(name) : 'No one'}</b><small>${name ? 'voted out' : 'the vote'}</small>` });
     if (out !== null) {
       const st = slot.querySelector('.seatTable'); if (st) st.classList.add('revealDark');
@@ -6757,7 +6776,7 @@ function onlineRfShow() {
   if (!rf) return;
   if (!rf.vic.length || rf.i >= rf.vic.length) { const f = rf.next; ON.rf = null; ON.inReveal = false; if (f) f(); return; }
   const v = rf.vic[rf.i], last = rf.i >= rf.vic.length - 1;
-  const d = ON.dawn || {};
+  const d = /** @type {any} */ (ON.dawn || {});
   const role = d.revealDead && v.r ? (ROLES[v.r] ? ROLES[v.r][0] : v.r) : '';
   PHASE = 'day';
   show(`<div class="deathReveal"><p class="bd">Night ${esc(d.day || '')}</p><div class="candleStage" aria-hidden="true"><div class="candle"><span class="smoke"></span><span class="smoke"></span><span class="smoke"></span><div class="flame"></div><div class="body"><i class="waxDrip"></i></div><div class="holder"></div></div></div><h1>${esc(v.n)}</h1>${role ? `<p class="teamPill">${esc(role)}</p>` : ''}<p class="mu small">${last ? 'The village will hear the rest at dawn.' : 'Another did not wake.'}</p><button onclick="onlineRfNext()">${last ? 'Continue' : 'Next'}</button></div>`);
@@ -6780,7 +6799,7 @@ function onlineTableTalk() {
   ON.talk = { order: alive.slice(off).concat(alive.slice(0, off)), i: 0, k: day * 7 };
   onlineRenderTalk();
 }
-function onlineTalkPrompt() { const t = ON.talk; return PROMPTS[(t.k + t.i) % PROMPTS.length]; }
+function onlineTalkPrompt() { const t = ON.talk || { k: 0, i: 0 }; return PROMPTS[(t.k + t.i) % PROMPTS.length]; }
 function onlineRenderTalk() {
   const t = ON && ON.talk;
   if (!t) return;
@@ -6815,14 +6834,14 @@ function onlineTaskBoardHTML(d) {
 function onlineWhereHTML(d) {
   if (!d) return '';
   const key = onlineKey(), R = (MAPS[key] || MAPS.barrio).rooms;
-  if (Array.isArray(d.where)) {
+  if (Array.isArray(d.where) && PREFS.whoWhere !== false) {
     const by = {};
     d.where.forEach(w => { (by[w.r] = by[w.r] || []).push(w); });
-    const rows = Object.keys(by).sort((a, b) => a - b).map(r => `<div class="whereRow"><b>${esc((R[r] || ['?'])[0])}</b><span class="faces">${by[r].map(w => `<span class="whoFace">${w.dead ? avd(w.n) : av(w.n)}<small>${esc(w.n)}</small></span>`).join('')}</span></div>`).join('');
+    const rows = Object.keys(by).sort((a, b) => +a - +b).map(r => `<div class="whereRow"><b>${esc((R[r] || ['?'])[0])}</b><span class="faces">${by[r].map(w => `<span class="whoFace">${w.dead ? avd(w.n) : av(w.n)}<small>${esc(w.n)}</small></span>`).join('')}</span></div>`).join('');
     return `<div class="card"><h2>Where people were</h2><div class="whereList">${rows}</div><p class="mu small">Each portrait shows where a player spent the night. A crossed-out portrait is a player who was found dead.</p></div>`;
   }
   if (d.counts && Object.keys(d.counts).length) {
-    const rows = Object.keys(d.counts).sort((a, b) => a - b).map(r => `<div class="whereRow"><b>${esc((R[r] || ['?'])[0])}</b><span class="mu">${d.counts[r]} here</span></div>`).join('');
+    const rows = Object.keys(d.counts).sort((a, b) => +a - +b).map(r => `<div class="whereRow"><b>${esc((R[r] || ['?'])[0])}</b><span class="mu">${d.counts[r]} here</span></div>`).join('');
     return `<div class="card"><h2>Where people were</h2><div class="whereList">${rows}</div><p class="mu small">Numbers show how many players spent the night in each room.</p></div>`;
   }
   return '';
@@ -6844,12 +6863,12 @@ function onlineChronOpen() {
 function onlineNotes() {
   if (!ON || !ON.mail) return;
   ON.seen = ON.seen || {};
+  const seen = ON.seen;
   const notes = ON.mail.filter(m => m.kind === 'note').slice().reverse();
-  notes.forEach(m => { ON.seen[m.id] = true; });
+  notes.forEach(m => { seen[m.id] = true; });
   show(`<h1>Your letters</h1><p class="mu small">Every word here is yours alone. Not even the host knows they exist.</p>
     <div class="card">${notes.length ? notes.map(m => `<div class="task"><span class="lookEye">${roleSigil((ON.state || {}).role || ON.role || 'seer')}</span><p style="margin:0">${esc((m.data || {}).text || '')}</p></div>`).join('') : '<p class="mu small">No letters yet.</p>'}</div>
     <button class="alt" style="width:100%" onclick="onlineDrawSanctuary()">Back</button>`);
 }
-
 
 </script></body></html>
