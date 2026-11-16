@@ -5898,7 +5898,12 @@ function onlineSanReportHTML(I, modal) {
   const d = ON.dawn;
   if (!d) return '';
   const W = ON.words || [];
-  const vic = (d.vic || []).map(v => `<div class="task"><span>${av(v.n)}</span><span>${esc(v.n)}</span><span class="mu small">${d.revealDead && v.r ? esc(v.r) : 'did not wake'}</span></div>`).join('');
+  const wordsFor = (v) => (((d.lw || []).find(x => v.uid ? x.uid === v.uid : x.n === v.n) || {}).t)
+    || ((((ON.words || []).find(x => x.name === v.n) || {}).text) || '');
+  const vic = (d.vic || []).map(v => {
+    const w = wordsFor(v);
+    return `<div class="task"><span>${av(v.n)}</span><div><b>${esc(v.n)}</b>${w ? `<p class="epitaph mu small" style="margin:0">“${esc(w)}”</p>` : ''}</div><span class="mu small">${d.revealDead && v.r ? esc(v.r) : 'did not wake'}</span></div>`;
+  }).join('');
   return `<h2>Dawn, day ${esc(d.day)}</h2>
     <p class="mu small">${d.headline ? esc(d.headline) : esc(d.calm || 'The village wakes.')}</p>
     ${vic ? `<div class="card"><h2>The fallen</h2>${vic}</div>` : ''}
@@ -6176,6 +6181,21 @@ function onlineLastWord(w) {
   toast(`${p ? p.name : 'Someone'}'s last words arrived — see the dawn icon.`);
   ON.words = ON.words || [];
   ON.words.push({ name: p ? p.name : 'Someone', text: w.text, at: w.at });
+  /* the freshly fallen speaks while their reveal card is still up: paint the epitaph on it */
+  const rf = ON.rf;
+  if (rf) {
+    const v = rf.vic[rf.i];
+    if (v && (v.uid ? v.uid === w.user_id : v.n === (p ? p.name : ''))) {
+      const card = document.querySelector('.deathReveal');
+      if (card && !card.querySelector('.epitaph')) {
+        const el = document.createElement('p');
+        el.className = 'epitaph';
+        el.textContent = '\u201C' + w.text + '\u201D';
+        const after = card.querySelector('.teamPill') || card.querySelector('h1');
+        if (after && after.parentNode === card) after.insertAdjacentElement('afterend', el);
+      }
+    }
+  }
   sfx('paper');
   onlineSanSoft();
 }
