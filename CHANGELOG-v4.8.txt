@@ -1,0 +1,16 @@
+Unsigned v4.8 — Gameplay Expansion
+
+Gameplay change
+- Offline pass-and-play task selection now opens the expanded task minigame engine already used by online play.
+- Offline players now have access to the full 15-minigame rotation instead of the legacy six simple task interactions.
+- The task engine selects its minigame using the existing map-specific offset and task index, so Barrio, Haunted Island, and Space Station retain distinct task rotations.
+- Task completion still uses the existing offline flow: one night action per player, task ownership attribution, save/resume, and dawn resolution remain in place.
+
+Preserved
+- Existing role powers, role dealing, night/day phases, voting, win conditions, archives, and save format.
+- Online multiplayer task flow and Supabase integration. No backend schema or new dependency is required.
+
+Verification
+- Source route check: offline task buttons now call newMinigame().
+- JavaScript syntax checks and ZIP integrity checks are run on this build.
+- This build has not been fully playtested in a live browser, on physical phones, or across multiple online clients.

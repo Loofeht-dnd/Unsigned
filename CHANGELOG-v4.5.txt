@@ -1,0 +1,21 @@
+UNSIGNED v4.5 — CINEMATIC FOUNDATION
+
+Additive visual enhancement build based on the supplied v4.4 source.
+
+Changes:
+- Cinematic dark background and refined visual palette.
+- Enhanced menu presentation with subtle camera drift and layered lighting.
+- Refined logo, typography, menu buttons, borders, depth and lighting.
+- Improved cards, map cards, focus visibility and touch interaction.
+- Responsive spacing for mobile and wider desktop screens.
+- Reduced-motion safeguards retained and extended.
+- Main menu build label updated to v4.5.
+
+Compatibility:
+- Existing game logic, role systems, minigames, save logic, offline play,
+  Supabase multiplayer, and existing assets are retained without intentional edits.
+- Changes are additive CSS/metadata changes.
+
+Testing:
+- Static source checks are possible; a live browser playthrough and online
+  multiplayer test are still required before treating this as release-ready.

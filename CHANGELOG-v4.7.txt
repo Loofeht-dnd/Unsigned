@@ -1,0 +1,22 @@
+UNSIGNED v4.7 — CINEMATIC GAMEPLAY
+
+Built from the v4.6 Living Environments source.
+
+Implemented presentation upgrades:
+- Enhanced existing secret role reveal with ambient halo and one-time light sweep.
+- Refined existing card-back treatment.
+- Added slow rotating light rays to the existing phase curtain.
+- Deepened existing death/candle reveal with a subtle warm aura.
+- Refined sealed vote and tally bar presentation.
+- Enhanced existing elimination flash and game-ending artwork framing.
+- Preserved existing component timing, phase state, role logic and voting logic.
+- Added reduced-motion safeguards for all new animation layers.
+- Updated visible build identification to v4.7.
+
+No new backend, network calls, external dependencies, gameplay state, or role
+mechanics were added. This is a visual/presentation pass against existing UI.
+
+Testing:
+- ZIP integrity and inline JavaScript syntax checks should be run on final archive.
+- Full manual role reveal, phase transition, vote, elimination and game-ending
+  playthroughs are still required on mobile and desktop.

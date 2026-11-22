@@ -1,0 +1,23 @@
+UNSIGNED v4.6 — LIVING ENVIRONMENTS
+
+Built from the supplied v4.5 Cinematic Foundation project.
+
+Implemented:
+- Barrio ambient lantern glow with a warmer night treatment.
+- Haunted Island lighthouse-style sweeping beam and animated sea haze.
+- Space Station holographic scan and cool electrical bloom.
+- Subtle breathing animation on existing map artwork cards.
+- Phase-aware atmosphere intensity for night, day, and role dealing.
+- Reduced-motion and body.reduce-motion safeguards.
+- Updated visible build labels to v4.6.
+
+Implementation:
+- Reuses existing body.p-barrio / p-island / p-station classes.
+- Reuses existing #weather and its ::after layer, plus existing mapArt classes.
+- No new gameplay state, dependencies, network calls, or backend requirements.
+- No intentional changes to role logic, minigames, save handling, or multiplayer.
+
+Testing:
+- Source-level checks performed after packaging.
+- A full interactive browser playthrough, mobile-device check, and online
+  multiplayer regression test remain necessary before release.
